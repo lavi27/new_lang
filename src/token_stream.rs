@@ -1,8 +1,11 @@
 use std::fmt;
 
-#[derive(PartialEq, Eq)]
+use crate::s;
+
+#[derive(PartialEq, Eq, Clone)]
 pub enum Token {
     String(String),
+    Intager(String),
     /// (
     LeftParen,
     /// )
@@ -15,6 +18,10 @@ pub enum Token {
     LeftBracket,
     /// ]
     RightBracket,
+    /// <
+    LeftAngleBracket,
+    /// >
+    RightAngleBracket,
     /// ,
     Comma,
     /// .
@@ -23,8 +30,10 @@ pub enum Token {
     Questionmark,
     /// !
     Exclamationmark,
-    /// " or '
+    /// '
     Quote,
+    /// "
+    DoubleQuote,
     /// :
     Colon,
     /// ;
@@ -37,6 +46,8 @@ pub enum Token {
     Plus,
     /// -
     Minus,
+    /// =
+    Equal,
 }
 
 impl Token {
@@ -48,48 +59,57 @@ impl Token {
             b'}' => Token::RightBrace,
             b'[' => Token::LeftBracket,
             b']' => Token::RightBracket,
+            b'<' => Token::LeftAngleBracket,
+            b'>' => Token::RightAngleBracket,
             b',' => Token::Comma,
             b'.' => Token::Period,
             b'?' => Token::Questionmark,
             b'!' => Token::Exclamationmark,
-            b'\'' | b'"' => Token::Quote,
+            b'\'' => Token::Quote,
+            b'"' => Token::DoubleQuote,
             b':' => Token::Colon,
             b';' => Token::Semicolon,
             b'/' => Token::Slash,
             b'*' => Token::Asterisk,
             b'+' => Token::Plus,
             b'-' => Token::Minus,
+            b'=' => Token::Equal,
             _ => return None,
         })
     }
 
-    fn to_str(&self) -> &str {
+    fn to_string(&self) -> String {
         match self {
-            Token::String(str) => str,
-            Token::LeftParen => "(",
-            Token::RightParen => ")",
-            Token::LeftBrace => "{",
-            Token::RightBrace => "}",
-            Token::LeftBracket => "[",
-            Token::RightBracket => "]",
-            Token::Comma => ",",
-            Token::Period => ".",
-            Token::Questionmark => "?",
-            Token::Exclamationmark => "!",
-            Token::Quote => "\"",
-            Token::Colon => ":",
-            Token::Semicolon => ";",
-            Token::Slash => "/",
-            Token::Asterisk => "*",
-            Token::Plus => "+",
-            Token::Minus => "-",
+            Token::String(str) => str.to_owned(),
+            Token::Intager(int) => int.to_string(),
+            Token::LeftParen => s!("("),
+            Token::RightParen => s!(")"),
+            Token::LeftBrace => s!("{"),
+            Token::RightBrace => s!("}"),
+            Token::LeftBracket => s!("["),
+            Token::RightBracket => s!("]"),
+            Token::LeftAngleBracket => s!("<"),
+            Token::RightAngleBracket => s!(">"),
+            Token::Comma => s!(","),
+            Token::Period => s!("."),
+            Token::Questionmark => s!("?"),
+            Token::Exclamationmark => s!("!"),
+            Token::Quote => s!("\'"),
+            Token::DoubleQuote => s!("\""),
+            Token::Colon => s!(":"),
+            Token::Semicolon => s!(";"),
+            Token::Slash => s!("/"),
+            Token::Asterisk => s!("*"),
+            Token::Plus => s!("+"),
+            Token::Minus => s!("-"),
+            Token::Equal => s!("="),
         }
     }
 }
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.to_str());
+        f.write_str(&self.to_string());
         Ok(())
     }
 }
@@ -117,6 +137,21 @@ impl TokenStream {
         } else {
             None
         }
+    }
+
+    pub fn string_before_char(&mut self, char_byte: u8) -> String {
+        let token_start = self.offset;
+
+        while self.offset < self.raw.len() {
+            if self.raw[self.offset] == char_byte {
+                self.offset += 1;
+                return String::from_utf8(self.raw[token_start..self.offset - 1].to_vec()).unwrap();
+            }
+
+            self.offset += 1;
+        }
+
+        panic!("Expected token: {}", char_byte);
     }
 }
 
