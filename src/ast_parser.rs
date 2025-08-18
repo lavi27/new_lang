@@ -52,6 +52,16 @@ enum Node {
     TypeExpr(TypeExpr),
 }
 
+impl Node {
+    pub fn to_rust(&self) {
+      match self {
+        Node::EqualAssign => {},
+        Node::ValueExpr(value_expr) => value_expr.to_rust(),
+        
+      }
+    }
+}
+
 #[derive(Clone)]
 enum ValueExpr {
     IntagerLiteral(i64),
@@ -83,11 +93,23 @@ enum ValueExpr {
     },
 }
 
+impl ValueExpr {
+    pub fn to_rust() {
+
+    }
+}
+
 #[derive(Clone)]
 enum VariableDefineExpr {
     Name(String),
     WithType(String, TypeExpr),
     TupleDestruct(Vec<VariableDefineExpr>),
+}
+
+impl VariableDefineExpr {
+    pub fn to_rust() {
+
+    }
 }
 
 #[derive(Clone)]
@@ -96,8 +118,16 @@ enum TypeExpr {
     WithArgs(String, Vec<TypeExpr>),
 }
 
+impl TypeExpr {
+
+}
+
 #[derive(Clone)]
 struct CodeBlock(Vec<Node>);
+
+impl CodeBlock {
+    
+}
 
 pub struct AbstractSyntaxTree {
     pub main_routine: CodeBlock,
