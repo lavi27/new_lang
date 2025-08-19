@@ -122,7 +122,10 @@ impl ToRust for ValueExpr {
             ValueExpr::IntagerLiteral(int) => int.to_string(),
             ValueExpr::floatLiteral(float) => float.to_string(),
             ValueExpr::StringLiteral(str) => str,
-            ValueExpr::IntagerLiteral(int) => int.to_string(),
+            ValueExpr::Add(lvel, rvel) => format!("{lvel.to_rust()}+{rvel.to_rust()}"),
+            ValueExpr::Sub(lvel, rvel) => format!("{lvel.to_rust()}-{rvel.to_rust()}"),
+            ValueExpr::Mul(lvel, rvel) => format!("{lvel.to_rust()}*{rvel.to_rust()}"),
+            ValueExpr::Div(lvel, rvel) => format!("{lvel.to_rust()}/{rvel.to_rust()}"),
 
         }
     }
