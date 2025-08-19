@@ -130,13 +130,9 @@ impl TokenStream {
     pub fn peek(&mut self) -> Option<Token> {
         let prev_offest = self.offset;
         let res = self.next();
+        self.offset = prev_offest;
 
-        if res.is_some() {
-            self.offset = prev_offest;
-            res
-        } else {
-            None
-        }
+        res
     }
 
     pub fn string_before_char(&mut self, char_byte: u8) -> String {
@@ -160,31 +156,48 @@ impl Iterator for TokenStream {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut token_start = self.offset;
+        let mut is_expect_intager = false;
 
         while self.offset < self.raw.len() {
             match self.raw[self.offset] {
                 b' ' => {
                     if token_start != self.offset {
                         self.offset += 1;
-                        return Some(Token::String(
-                            String::from_utf8(self.raw[token_start..self.offset - 1].to_vec())
-                                .unwrap(),
-                        ));
+                        let result = String::from_utf8(self.raw[token_start..self.offset - 1].to_vec()).unwrap();
+                        let result = if is_expect_intager {
+                            Token::Intager(result)
+                        } else {
+                            Token::String(result)
+                        };
+
+                        return Some(result);
                     } else {
                         token_start += 1;
                     }
                 }
-                char => {
-                    if let Some(token) = Token::char_byte_to_token(char) {
-                        if token_start != self.offset {
-                            return Some(Token::String(
-                                String::from_utf8(self.raw[token_start..self.offset].to_vec())
-                                    .unwrap(),
-                            ));
+                char => if let Some(token) = Token::char_byte_to_token(char) {
+                    if token_start != self.offset {
+                        let result = String::from_utf8(self.raw[token_start..self.offset - 1].to_vec()).unwrap();
+                        let result = if is_expect_intager {
+                            Token::Intager(result)
                         } else {
-                            self.offset += 1;
-                            return Some(token);
-                        }
+                            Token::String(result)
+                        };
+
+                        return Some(result);
+                    } else {
+                        self.offset += 1;
+                        return Some(token);
+                    }
+                }
+                b'0'..b'9' => {
+                    if token_start == self.offset {
+                        is_expect_intager = true;
+                    }
+                }
+                other => {
+                    if token_start != self.offset && is_expect_intager {
+                        panic!("Number can't be prefix of any expression.");
                     }
                 }
             }

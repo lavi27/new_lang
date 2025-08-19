@@ -3,10 +3,14 @@ use crate::{
     token_stream::{Token, TokenStream},
 };
 
+trait ToRust {
+    pub fn to_rust(&self) -> String;
+}
+
 #[derive(Clone)]
 enum Node {
     EqualAssign {
-        variable: String,
+        variable: ValueExpr,
         value: ValueExpr,
     },
     If {
@@ -34,14 +38,10 @@ enum Node {
         define_expr: VariableDefineExpr,
         value: ValueExpr,
     },
-    Namespace {
-        parent: String,
-        child: String,
-    },
     FnDefine {
         name: String,
         type_args: Option<Vec<TypeExpr>>,
-        return_type: Option<TypeExpr>,
+        return_type: TypeExpr,
         args: Vec<VariableDefineExpr>,
         body: CodeBlock,
     },
@@ -50,14 +50,36 @@ enum Node {
     CodeBlock(CodeBlock),
     VariableDefineExpr(VariableDefineExpr),
     TypeExpr(TypeExpr),
+    NamespaceChain(NamespaceChain),
 }
 
-impl Node {
-    pub fn to_rust(&self) {
+impl ToRust for Node {
+    pub fn to_rust(&self) => String {
       match self {
-        Node::EqualAssign => {},
-        Node::ValueExpr(value_expr) => value_expr.to_rust(),
-        
+        Node::CodeBlock(expr)
+        | Node::ValueExpr(expr)
+        | Node::VariableDefineExpr(expr)
+        | Node::TypeExpr(expr)
+        | Node::NamespaceChain(expr) => expr.to_rust() + ";",
+        Node::EqualAssign => format!("{self.variable.to_rust()} = {self.value.to_rust()};"),
+        Node::If => {
+            if let Some(else_body) = self.else_body {
+                format!("if {self.condition.to_rust()} \{ {self.if_body.to_rust()} \} else \{ {else_body.to_rust()} \};")    
+            } else {
+                format!("if {self.condition.to_rust()} \{ {self.if_body.to_rust()} \};")
+            }
+        },
+        Node::ForIn => format!("newlang_forin!({self.iter_item.to_rust()}, {self.iter.to_rust()}, {self.iter_body.to_rust()}, {self.remain_body.to_rust()});"),
+        Node::ParallelForIn => format!("newlang_parallelforin!({self.iter_item.to_rust()}, {self.iter.to_rust()}, {self.iter_body.to_rust()}, {self.remain_body.to_rust()});"),
+        Node::VariableLet => format!("let {self.define_expr.to_rust()} = {self.value.to_rust()};"),
+        Node::VariableVar => format!("let mut {self.define_expr.to_rust()} = {self.value.to_rust()};"),
+        Node::FnDefine => {
+            if let Some(type_args) = self.type_args {
+                format!("fn {self.name.to_rust()}<{type_args}>({self.return_type.to_rust()}) -> {self.return_type.to_rust()} \{ {self.body.to_rust()} \};")
+            } else {
+                format!("fn {self.name.to_rust()}({self.return_type.to_rust()}) -> {self.return_type.to_rust()} \{ {self.body.to_rust()} \};")
+            }
+        },
       }
     }
 }
@@ -76,6 +98,7 @@ enum ValueExpr {
     Tuple(Vec<ValueExpr>),
     Variable(String),
     FnCall {
+        namespace: NamespaceChain,
         name: String,
         type_args: Option<Vec<TypeExpr>>,
         args: Vec<ValueExpr>,
@@ -93,9 +116,11 @@ enum ValueExpr {
     },
 }
 
-impl ValueExpr {
-    pub fn to_rust() {
-
+impl ToRust for ValueExpr {
+    pub fn to_rust(&self) -> String {
+        match self {
+            ValueExpr:: => format!(""),
+        }
     }
 }
 
@@ -106,9 +131,11 @@ enum VariableDefineExpr {
     TupleDestruct(Vec<VariableDefineExpr>),
 }
 
-impl VariableDefineExpr {
-    pub fn to_rust() {
-
+impl ToRust for VariableDefineExpr {
+    pub fn to_rust(&self) -> String {
+        match self {
+            ValueExpr:: => format!(""),
+        }
     }
 }
 
@@ -118,15 +145,46 @@ enum TypeExpr {
     WithArgs(String, Vec<TypeExpr>),
 }
 
-impl TypeExpr {
+impl ToRust for TypeExpr {
+    pub fn to_rust(&self) -> String {
+        match self {
+            ValueExpr:: => format!(""),
+        }
+    }
+}
 
+#[derive(Clone)]
+struct NamespaceChain(Vec<(String, String)>)
+
+impl ToRust for NamespaceChain {
+    pub fn to_rust(&self) -> String {
+        let mut result = String::new();
+        
+        for space in self.0 {
+            result.push(space);
+            result.push("::");
+        }
+
+        result.pop(2);
+        result
+    }
 }
 
 #[derive(Clone)]
 struct CodeBlock(Vec<Node>);
 
-impl CodeBlock {
-    
+impl ToRust for CodeBlock {
+    pub fn to_rust(&self) -> String {
+        let mut result = s!("{\n");
+
+        for line in self.0 {
+            result.push(line.to_rust());
+            result.push("\n");
+        }
+
+        result.push("}");
+        result
+    }
 }
 
 pub struct AbstractSyntaxTree {
@@ -138,13 +196,26 @@ pub struct ASTParser {
 }
 
 impl ASTParser {
-    pub fn from(str: String) -> Self {
+    pub fn parse(input_code: String) -> Result<AbstractSyntaxTree> {
+        let mut parser = Self::new(input_code);
+        parser.parse()
+    }
+
+    pub fn new(input_code: String) -> Self {
         Self {
-            token_stream: TokenStream::from(str),
+            token_stream: TokenStream::from(input_code),
         }
     }
 
-    pub fn parse(&mut self) {}
+    pub fn parse(&mut self) -> Result<AbstractSyntaxTree> {    
+        let mut lines = Vec::new();
+
+        while self.token_stream.peek().is_some() {
+            lines.push(self.parse_codeline());
+        }
+
+        return AbstractSyntaxTree { main_routine: CodeBlock(lines) }
+    }
 
     fn assert_next_token(&mut self, token: Token) {
         let Some(curr_token) = self.token_stream.next() else {
