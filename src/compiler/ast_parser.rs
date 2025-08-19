@@ -193,17 +193,19 @@ pub struct AbstractSyntaxTree {
 
 pub struct ASTParser {
     token_stream: TokenStream,
+    filename: String,
 }
 
 impl ASTParser {
-    pub fn parse(input_code: String) -> Result<AbstractSyntaxTree> {
-        let mut parser = Self::new(input_code);
+    pub fn parse(filename: String, input_code: String) -> Result<AbstractSyntaxTree> {
+        let mut parser = Self::new(filename, input_code);
         parser.parse()
     }
 
-    pub fn new(input_code: String) -> Self {
+    pub fn new(filename: String, input_code: String) -> Self {
         Self {
             token_stream: TokenStream::from(input_code),
+            filename,
         }
     }
 
@@ -211,10 +213,18 @@ impl ASTParser {
         let mut lines = Vec::new();
 
         while self.token_stream.peek().is_some() {
-            lines.push(self.parse_codeline());
+            let panic = panic::catch_unwind(|| self.parse_codeline());
+            
+            if panic.is_err() {
+                let (col, Range {start}) = self.token_stream.get_curr_position();
+
+                return format!("Syntax Error (at {self.filename}:{col}:{start}): {}", panic.unwrap_err());
+            } else {
+                lines.push(panic.unwrap());
+            }
         }
 
-        return AbstractSyntaxTree { main_routine: CodeBlock(lines) }
+        return Ok(AbstractSyntaxTree { main_routine: CodeBlock(lines) });
     }
 
     fn assert_next_token(&mut self, token: Token) {
@@ -233,7 +243,7 @@ impl ASTParser {
         };
 
         let Token::String(str) = curr_token else {
-            panic!("'{curr_token}' can't be in to some name.");
+            panic!("'{curr_token}' can't be included to some name.");
         };
 
         return str;
@@ -430,16 +440,16 @@ impl ASTParser {
                     };
 
                     let Token::Intager(decimal_places) = token else {
-                        panic!();
+                        panic!("Invalid decimal places of float literal.");
                     };
 
                     ValueExpr::FloatLiteral(
                         format!("{}.{}", int, decimal_places)
                             .parse::<f64>()
-                            .expect("msg"),
+                            .expect("Invalid float literal."),
                     )
                 } else {
-                    ValueExpr::IntagerLiteral(int.parse::<i64>().expect("msg"))
+                    ValueExpr::IntagerLiteral(int.parse::<i64>().expect("Invalid int literal."))
                 }
             }
             Token::LeftParen => {
@@ -459,7 +469,7 @@ impl ASTParser {
                 }
             }
             other => {
-                todo!();
+                panic!("Unexpected expression '{other}'.");
             }
         };
 
@@ -627,7 +637,7 @@ impl ASTParser {
                 }
             },
             other => {
-                todo!()
+                panic!("Unexpected expression '{other}'.");
             }
         }
     }

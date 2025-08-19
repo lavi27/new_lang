@@ -5,18 +5,17 @@ pub struct CodeGenerater {
 
 impl CodeGenerater {
   pub fn generate(ast: &AbstractSyntaxTree) -> String {
-    let mut generater = Self::new();
+    let mut generater = Self::new(ast);
     generater.generate_rust()
   }  
   
   pub fn new(ast: &AbstractSyntaxTree) {
       Self {
         ast,
-        result: String::new(),
       }
     }
 
   pub fn generate_rust(&mut self) {
-    self.result = self.ast.main_routine.to_rust()
+    self.ast.main_routine.to_rust()
   }
 }

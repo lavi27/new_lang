@@ -117,6 +117,8 @@ impl fmt::Display for Token {
 pub struct TokenStream {
     raw: Vec<u8>,
     offset: usize,
+    curr_col: usize,
+    curr_row_range: Range<usize>,
 }
 
 impl TokenStream {
@@ -124,6 +126,8 @@ impl TokenStream {
         Self {
             raw: str.into_bytes(),
             offset: 0,
+            curr_col: 1,
+            curr_row_range: ,
         }
     }
 
@@ -149,6 +153,10 @@ impl TokenStream {
 
         panic!("Expected token: {}", char_byte);
     }
+
+    pub fn get_curr_position(&self) => (usize, Range<usize>) {
+        (self.curr_col, self.curr_row_range)
+    }
 }
 
 impl Iterator for TokenStream {
@@ -156,13 +164,13 @@ impl Iterator for TokenStream {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut token_start = self.offset;
+        let mut row_start_offset = self.offset;
         let mut is_expect_intager = false;
 
         while self.offset < self.raw.len() {
             match self.raw[self.offset] {
                 b' ' => {
-                    if token_start != self.offset {
-                        self.offset += 1;
+                    if token_start != self.offset { 
                         let result = String::from_utf8(self.raw[token_start..self.offset - 1].to_vec()).unwrap();
                         let result = if is_expect_intager {
                             Token::Intager(result)
@@ -170,6 +178,9 @@ impl Iterator for TokenStream {
                             Token::String(result)
                         };
 
+                        self.curr_row_range.start = token_start - row_start_offset + 1;
+                        self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
+                        self.offset += 1;
                         return Some(result);
                     } else {
                         token_start += 1;
@@ -184,8 +195,12 @@ impl Iterator for TokenStream {
                             Token::String(result)
                         };
 
+                        self.curr_row_range.start = token_start - row_start_offset + 1;
+                        self.curr_row_range.end = self.offset - row_start_offset + 1;
                         return Some(result);
                     } else {
+                        self.curr_row_range.start = token_start - row_start_offset + 1;
+                        self.curr_row_range.end = self.offset - row_start_offset + 1;
                         self.offset += 1;
                         return Some(token);
                     }
@@ -197,8 +212,14 @@ impl Iterator for TokenStream {
                 }
                 other => {
                     if token_start != self.offset && is_expect_intager {
+                        self.curr_row_range.start = token_start - row_start_offset + 1;
+                        self.curr_row_range.end = self.offset - row_start_offset + 1;
                         panic!("Number can't be prefix of any expression.");
                     }
+                }
+                b'\n' => {
+                    row_start_offset = self.curr_col;
+                    self.curr_col += 1;
                 }
             }
 
