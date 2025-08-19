@@ -196,7 +196,7 @@ impl Iterator for TokenStream {
                         };
 
                         self.curr_row_range.start = token_start - row_start_offset + 1;
-                        self.curr_row_range.end = self.offset - row_start_offset + 1;
+                        self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
                         return Some(result);
                     } else {
                         self.curr_row_range.start = token_start - row_start_offset + 1;
