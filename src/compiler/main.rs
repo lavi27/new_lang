@@ -1,4 +1,3 @@
-mod static_test;
 mod ast_parser;
 mod code_generater;
 mod token_stream;
@@ -22,11 +21,11 @@ impl Compiler {
     }
 
     pub fn compile(&self) -> String {
-        let Ok(ast) = AstParser::parse(input_code) else {
+        let ast = AstParser::parse(input_code);
+        let Ok(ast) = ast else {
+            panic!(ast.unwrap_err());
+        }
 
-        };
-
-        let test_res = StaticTester::test(&ast);
         let output_code = CodeGenerater::generate(&ast);
 
         output_code    

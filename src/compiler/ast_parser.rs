@@ -213,15 +213,14 @@ impl ASTParser {
         let mut lines = Vec::new();
 
         while self.token_stream.peek().is_some() {
-            let panic = panic::catch_unwind(|| self.parse_codeline());
-            
-            if panic.is_err() {
+            let line_res = panic::catch_unwind(|| self.parse_codeline());
+            let Ok(line) = line_res else {
                 let (col, Range {start}) = self.token_stream.get_curr_position();
 
-                return format!("Syntax Error (at {self.filename}:{col}:{start}): {}", panic.unwrap_err());
-            } else {
-                lines.push(panic.unwrap());
-            }
+                return format!("Syntax Error (at {self.filename}:{col}:{start}): {}", line_res.unwrap_err());
+            };
+
+            lines.push(line);
         }
 
         return Ok(AbstractSyntaxTree { main_routine: CodeBlock(lines) });
