@@ -119,7 +119,11 @@ enum ValueExpr {
 impl ToRust for ValueExpr {
     pub fn to_rust(&self) -> String {
         match self {
-            ValueExpr:: => format!(""),
+            ValueExpr::IntagerLiteral(int) => int.to_string(),
+            ValueExpr::floatLiteral(float) => float.to_string(),
+            ValueExpr::StringLiteral(str) => str,
+            ValueExpr::IntagerLiteral(int) => int.to_string(),
+
         }
     }
 }
@@ -134,7 +138,9 @@ enum VariableDefineExpr {
 impl ToRust for VariableDefineExpr {
     pub fn to_rust(&self) -> String {
         match self {
-            ValueExpr:: => format!(""),
+            VariableDefineExpr::Name(name) => name,
+            VariableDefineExpr::WithType(name, type_) => format!("{name}: {type_}"),
+            VariableDefineExpr::TupleDestruct(items) => items.map(|i| i.to_rust()).join(", "),
         }
     }
 }
@@ -148,7 +154,8 @@ enum TypeExpr {
 impl ToRust for TypeExpr {
     pub fn to_rust(&self) -> String {
         match self {
-            ValueExpr:: => format!(""),
+            TypeExpr::Name(name) => name,
+            TypeExpr::WithArgs(name, args) => format!("{name}<{args.map(|i| i.to_rust()).join(", ")}>"),
         }
     }
 }
@@ -158,14 +165,10 @@ struct NamespaceChain(Vec<(String, String)>)
 
 impl ToRust for NamespaceChain {
     pub fn to_rust(&self) -> String {
-        let mut result = String::new();
+        let mut result = self.0[0].0;
         
-        for space in self.0 {
-            result.push(space);
-            result.push("::");
-        }
+        result += self.0.map(|i| i.1).join("::");
 
-        result.pop(2);
         result
     }
 }
