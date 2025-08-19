@@ -1,6 +1,6 @@
-use clap::Parser;
+use clap::*;
+use std::{fs::File, io::Read};
 
-#![feature(pattern)]
 mod compiler;
 
 #[derive(Parser)]
@@ -17,24 +17,23 @@ enum Commands {
 
         #[arg(short, long)]
         outdir: String,
-    }
+    },
 }
 
 fn main() {
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::Build {file_path, outdir} => {
-            let stdin = File::open(file_path);
-            let stdin = stdin.lock();
+        Commands::Build { file_path, outdir } => {
+            let stdin = File::open(file_path).expect("msg");
             let mut stdin = std::io::BufReader::new(stdin);
-            let input_code = stdin.read();
+            let input_code = String::with_capacity(256);
+            stdin.read_to_string(&mut input_code);
 
-            let stdout = File::open(outdir);
-            let stdout = stdout.lock();
+            let stdout = File::open(outdir).expect("msg");
             let mut stdout = std::io::BufWriter::new(stdout);
 
-            let output_code = Compiler::compile(input_code);
+            let output_code = compiler::Compiler::compile(input_code);
 
             writeln!(stdout, output_code).unwrap();
         }

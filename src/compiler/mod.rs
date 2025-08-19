@@ -9,25 +9,23 @@ pub struct Compiler {
 }
 
 impl Compiler {
-    pub fn compile(input_code: String) -> String {
+    pub fn compile_static(input_code: String) -> String {
         let compiler = Self::new(input_code);
         compiler.compile()
     }
 
     pub fn new(input_code: String) -> Self {
-        Self {
-            input_code,
-        }
+        Self { input_code }
     }
 
     pub fn compile(&self) -> String {
-        let ast = AstParser::parse(input_code);
+        let ast = ast_parser::AstParser::parse(self.input_code);
         let Ok(ast) = ast else {
-            panic!(ast.unwrap_err());
-        }
+            panic!("{}", ast.unwrap_err());
+        };
 
-        let output_code = CodeGenerater::generate(&ast);
+        let output_code = code_generater::CodeGenerater::generate(&ast);
 
-        output_code    
+        output_code
     }
 }
