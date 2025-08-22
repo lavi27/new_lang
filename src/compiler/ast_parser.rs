@@ -69,7 +69,7 @@ impl ToRust for Node {
                 format!("if {self.condition.to_rust()} \{ {self.if_body.to_rust()} \};")
             }
         },
-        Node::ForIn => format!("newlang_forin!({self.iter_item.to_rust()}, {self.iter.to_rust()}, {self.iter_body.to_rust()}, {self.remain_body.to_rust()});"),
+        Node::ForIn => format!("newlang_forin!(({self.iter_item.to_rust()}), ({self.iter.to_rust()}), {self.iter_body.to_rust()}, {self.remain_body.to_rust()});"),
         Node::ParallelForIn => format!("newlang_parallelforin!({self.iter_item.to_rust()}, {self.iter.to_rust()}, {self.iter_body.to_rust()}, {self.remain_body.to_rust()});"),
         Node::VariableLet => format!("let {self.define_expr.to_rust()} = {self.value.to_rust()};"),
         Node::VariableVar => format!("let mut {self.define_expr.to_rust()} = {self.value.to_rust()};"),
@@ -195,11 +195,19 @@ impl ToRust for CodeBlock {
 
 pub struct AbstractSyntaxTree {
     pub main_routine: CodeBlock,
+    pub is_threading_used: bool,
+}
+
+impl Default for AbstractSyntaxTree {
+    fn default() {
+
+    }
 }
 
 pub struct ASTParser {
     token_stream: TokenStream,
     filename: String,
+    result: AbstractSyntaxTree,
 }
 
 impl ASTParser {
@@ -212,24 +220,23 @@ impl ASTParser {
         Self {
             token_stream: TokenStream::from(input_code),
             filename,
+            result: AbstractSyntaxTree::default(),
         }
     }
 
-    pub fn parse(&mut self) -> Result<AbstractSyntaxTree> {    
-        let mut lines = Vec::new();
-
+    pub fn parse(&mut self) -> Result<AbstractSyntaxTree, String> {
         while self.token_stream.peek().is_some() {
             let line_res = panic::catch_unwind(|| self.parse_codeline());
             let Ok(line) = line_res else {
                 let (col, Range {start}) = self.token_stream.get_curr_position();
 
-                return format!("Syntax Error (at {self.filename}:{col}:{start}): {}", line_res.unwrap_err());
+                return Err(format!("Syntax Error (at {self.filename}:{col}:{start}): {}", line_res.unwrap_err()));
             };
 
-            lines.push(line);
+            self.result.main_routine.0.push(line);
         }
 
-        return Ok(AbstractSyntaxTree { main_routine: CodeBlock(lines) });
+        return Ok(take(self.result));
     }
 
     fn assert_next_token(&mut self, token: Token) {
@@ -584,6 +591,10 @@ impl ASTParser {
                         iter_body,
                         remain_body,
                     }
+                }
+                "parallelFor" => {
+                    self.result.is_threading_used = true;
+                    todo!()
                 }
                 "let" => {
                     let define_expr = self.parse_variable_define_expr();

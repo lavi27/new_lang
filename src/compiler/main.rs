@@ -6,11 +6,22 @@ mod utils;
 
 pub struct Compiler {
     input_code: String,
+    option: CompileOption,
+}
+
+pub struct CompileOption {
+    transfile: bool,
+}
+
+impl Default for CompileOption {
+    fn default() {
+
+    }
 }
 
 impl Compiler {
-    pub fn compile(input_code: String) -> String {
-        let compiler = Self::new(input_code);
+    pub fn compile(input_code: String, opt: CompileOption) -> String {
+        let compiler = Self::new(input_code, opt);
         compiler.compile()
     }
 
@@ -26,7 +37,11 @@ impl Compiler {
             panic!(ast.unwrap_err());
         }
 
-        let output_code = CodeGenerater::generate(&ast);
+        let output_code = CodeGenerater::generate(&ast, self.option);
+
+        if !self.option.transfile {
+        command::("rustc ...");
+        }
 
         output_code    
     }
