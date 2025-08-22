@@ -1,4 +1,9 @@
-const RUST_BASE: str = "static mut THREAD_POOL: Option<Vec<Handle>> = None;
+use crate::{
+    compiler::{ast_parser::AbstractSyntaxTree, CompileOption},
+    s,
+};
+
+const RUST_BASE: &str = "static mut THREAD_POOL: Option<Vec<Handle>> = None;
 
 fn get_thread_pool() {
     if THREAD_POOL.is_none() {
@@ -30,9 +35,7 @@ macro_rules! newlang_forin {
     }
 }";
 
-const RUST_THREADING_BASE = "static mut THREAD_POOL = None;";
-
-use crate::compiler::ast_parser::AbstractSyntaxTree;
+const RUST_THREADING_BASE: &str = "static mut THREAD_POOL = None;";
 
 pub struct CodeGenerater<'a> {
     ast: &'a AbstractSyntaxTree,
@@ -42,26 +45,27 @@ pub struct CodeGenerater<'a> {
 
 impl<'a> CodeGenerater<'a> {
     pub fn generate_static(ast: &'a AbstractSyntaxTree, opt: CompileOption) -> String {
-        let mut generater = Self::new(ast);
+        let mut generater = Self::new(ast, opt);
         generater.generate_rust()
     }
 
-    pub fn new(ast: &'a AbstractSyntaxTree) -> Self {
+    pub fn new(ast: &'a AbstractSyntaxTree, option: CompileOption) -> Self {
         Self {
             ast,
+            option,
             result: String::new(),
         }
     }
 
-  pub fn generate_rust(&mut self) {
-    let mut result = s!(RUST_BASE);
+    pub fn generate_rust(&mut self) -> String {
+        let mut result = s!(RUST_BASE);
 
-    if self.ast.is_threading_used {
-      result += RUST_THREADING_BASE;
+        if self.ast.is_threading_used {
+            result += RUST_THREADING_BASE;
+        }
+
+        result += self.ast.main_routine.to_rust();
+
+        result
     }
-
-    result += self.ast.main_routine.to_rust();
-
-    result
-  }
 }

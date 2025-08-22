@@ -5,6 +5,8 @@ use std::{
     path::Path,
 };
 
+use crate::compiler::CompileOption;
+
 mod compiler;
 
 #[derive(Parser)]
@@ -46,6 +48,7 @@ fn main() {
                     .expect("msg")
                     .to_string(),
                 input_code,
+                CompileOption::default(),
             );
 
             let stdout = File::open(outdir).expect("msg");

@@ -1,4 +1,4 @@
-use std::{ops::Range, panic};
+use std::{mem::take, ops::Range, panic};
 
 use crate::{
     s,
@@ -209,8 +209,11 @@ pub struct AbstractSyntaxTree {
 }
 
 impl Default for AbstractSyntaxTree {
-    fn default() {
-
+    fn default() -> Self {
+        Self {
+            main_routine: ,
+            is_threading_used: false,
+        }
     }
 }
 
@@ -246,7 +249,7 @@ impl ASTParser {
             self.result.main_routine.0.push(line);
         }
 
-        return Ok(take(self.result));
+        return Ok(take(&mut self.result));
     }
 
     fn assert_next_token(&mut self, token: Token) {

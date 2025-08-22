@@ -169,9 +169,11 @@ impl Iterator for TokenStream {
 
         while self.offset < self.raw.len() {
             match self.raw[self.offset] {
-                b' ' | b'/t' => {
-                    if token_start != self.offset { 
-                        let result = String::from_utf8(self.raw[token_start..self.offset - 1].to_vec()).unwrap();
+                b' ' | b'\t' => {
+                    if token_start != self.offset {
+                        let result =
+                            String::from_utf8(self.raw[token_start..self.offset - 1].to_vec())
+                                .unwrap();
                         let result = if is_expect_intager {
                             Token::Intager(result)
                         } else {
