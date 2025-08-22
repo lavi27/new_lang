@@ -167,7 +167,7 @@ enum TypeExpr {
 impl ToRust for TypeExpr {
     fn to_rust(&self) -> String {
         match self {
-            TypeExpr::Name(name) => name,
+            TypeExpr::Name(name) => name.to_owned(),
             TypeExpr::WithArgs(name, args) => format!("{name}<{args.map(|i| i.to_rust()).join(", ")}>"),
         }
     }
@@ -403,7 +403,7 @@ impl ASTParser {
         left_val: ValueExpr,
         min_priority: usize,
     ) -> Option<ValueExpr> {
-        let mut result = Some(left_val);
+        let mut result = Some(left_val.clone());
 
         loop {
             let Some(infix_token) = self.token_stream.next() else {

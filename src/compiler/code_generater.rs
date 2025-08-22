@@ -6,7 +6,7 @@ pub struct CodeGenerater<'a> {
 }
 
 impl<'a> CodeGenerater<'a> {
-    pub fn generate_static(ast: &AbstractSyntaxTree) -> String {
+    pub fn generate_static(ast: &'a AbstractSyntaxTree) -> String {
         let mut generater = Self::new(ast);
         generater.generate_rust()
     }
@@ -18,7 +18,7 @@ impl<'a> CodeGenerater<'a> {
         }
     }
 
-    pub fn generate_rust(&mut self) {
+    pub fn generate_rust(&mut self) -> String {
         self.ast.main_routine.to_rust()
     }
 }
