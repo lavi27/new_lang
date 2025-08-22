@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, ops::Range};
 
 use crate::s;
 
@@ -127,7 +127,7 @@ impl TokenStream {
             raw: str.into_bytes(),
             offset: 0,
             curr_col: 1,
-            curr_row_range: ,
+            curr_row_range: Range { start: 1, end: 1 },
         }
     }
 
@@ -154,8 +154,8 @@ impl TokenStream {
         panic!("Expected token: {}", char_byte);
     }
 
-    pub fn get_curr_position(&self) => (usize, Range<usize>) {
-        (self.curr_col, self.curr_row_range)
+    pub fn get_curr_position(&self) -> (usize, Range<usize>) {
+        (self.curr_col, self.curr_row_range.clone())
     }
 }
 
@@ -186,40 +186,44 @@ impl Iterator for TokenStream {
                         token_start += 1;
                     }
                 }
-                char => if let Some(token) = Token::char_byte_to_token(char) {
-                    if token_start != self.offset {
-                        let result = String::from_utf8(self.raw[token_start..self.offset - 1].to_vec()).unwrap();
-                        let result = if is_expect_intager {
-                            Token::Intager(result)
-                        } else {
-                            Token::String(result)
-                        };
-
-                        self.curr_row_range.start = token_start - row_start_offset + 1;
-                        self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
-                        return Some(result);
-                    } else {
-                        self.curr_row_range.start = token_start - row_start_offset + 1;
-                        self.curr_row_range.end = self.offset - row_start_offset + 1;
-                        self.offset += 1;
-                        return Some(token);
-                    }
-                }
                 b'0'..b'9' => {
                     if token_start == self.offset {
                         is_expect_intager = true;
                     }
                 }
-                other => {
+
+                b'\n' => {
+                    row_start_offset = self.curr_col;
+                    self.curr_col += 1;
+                }
+                char => {
+                    if let Some(token) = Token::char_byte_to_token(char) {
+                        if token_start != self.offset {
+                            let result =
+                                String::from_utf8(self.raw[token_start..self.offset - 1].to_vec())
+                                    .unwrap();
+                            let result = if is_expect_intager {
+                                Token::Intager(result)
+                            } else {
+                                Token::String(result)
+                            };
+
+                            self.curr_row_range.start = token_start - row_start_offset + 1;
+                            self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
+                            return Some(result);
+                        } else {
+                            self.curr_row_range.start = token_start - row_start_offset + 1;
+                            self.curr_row_range.end = self.offset - row_start_offset + 1;
+                            self.offset += 1;
+                            return Some(token);
+                        }
+                    }
+
                     if token_start != self.offset && is_expect_intager {
                         self.curr_row_range.start = token_start - row_start_offset + 1;
                         self.curr_row_range.end = self.offset - row_start_offset + 1;
                         panic!("Number can't be prefix of any expression.");
                     }
-                }
-                b'\n' => {
-                    row_start_offset = self.curr_col;
-                    self.curr_col += 1;
                 }
             }
 

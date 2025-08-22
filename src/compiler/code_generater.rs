@@ -32,22 +32,25 @@ macro_rules! newlang_forin {
 
 const RUST_THREADING_BASE = "static mut THREAD_POOL = None;";
 
-pub struct CodeGenerater {
-    ast: &AbstractSyntaxTree,
+use crate::compiler::ast_parser::AbstractSyntaxTree;
+
+pub struct CodeGenerater<'a> {
+    ast: &'a AbstractSyntaxTree,
     option: CompileOption,
     result: String,
 }
 
-impl CodeGenerater {
-  pub fn generate(ast: &AbstractSyntaxTree, opt: CompileOption) -> String {
-    let mut generater = Self::new(ast);
-    generater.generate_rust()
-  }  
-  
-  pub fn new(ast: &AbstractSyntaxTree) {
-      Self {
-        ast,
-      }
+impl<'a> CodeGenerater<'a> {
+    pub fn generate_static(ast: &'a AbstractSyntaxTree, opt: CompileOption) -> String {
+        let mut generater = Self::new(ast);
+        generater.generate_rust()
+    }
+
+    pub fn new(ast: &'a AbstractSyntaxTree) -> Self {
+        Self {
+            ast,
+            result: String::new(),
+        }
     }
 
   pub fn generate_rust(&mut self) {

@@ -1,6 +1,10 @@
-use clap::Parser;
+use clap::*;
+use std::{
+    fs::File,
+    io::{Read, Write},
+    path::Path,
+};
 
-#![feature(pattern)]
 mod compiler;
 
 #[derive(Parser)]
@@ -10,33 +14,43 @@ struct Cli {
     command: Commands,
 }
 
-#[derive(subcommand)]
+#[derive(Subcommand)]
 enum Commands {
     Build {
         file_path: String,
 
         #[arg(short, long)]
         outdir: String,
-    }
+    },
 }
 
 fn main() {
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::Build {file_path, outdir} => {
-            let stdin = File::open(file_path);
-            let stdin = stdin.lock();
-            let mut stdin = std::io::BufReader::new(stdin);
-            let input_code = stdin.read();
+        Commands::Build { file_path, outdir } => {
+            let input_code = {
+                let mut tmp = String::with_capacity(256);
+                let stdin = File::open(file_path).expect("msg");
+                let mut stdin = std::io::BufReader::new(stdin);
 
-            let stdout = File::open(outdir);
-            let stdout = stdout.lock();
+                stdin.read_to_string(&mut tmp);
+                tmp
+            };
+
+            let output_code = compiler::Compiler::compile_static(
+                Path::new(file_path)
+                    .file_name()
+                    .expect("msg")
+                    .to_str()
+                    .expect("msg")
+                    .to_string(),
+                input_code,
+            );
+
+            let stdout = File::open(outdir).expect("msg");
             let mut stdout = std::io::BufWriter::new(stdout);
-
-            let output_code = Compiler::compile(input_code);
-
-            writeln!(stdout, output_code).unwrap();
+            stdout.write_all(output_code.as_bytes());
         }
     }
 }
