@@ -48,6 +48,8 @@ pub enum Token {
     Minus,
     /// =
     Equal,
+    /// ::
+    Namespace,
 }
 
 impl Token {
@@ -103,6 +105,7 @@ impl Token {
             Token::Plus => s!("+"),
             Token::Minus => s!("-"),
             Token::Equal => s!("="),
+            Token::Namespace => s!("::"),
         }
     }
 }
@@ -188,15 +191,20 @@ impl Iterator for TokenStream {
                         token_start += 1;
                     }
                 }
-                b'0'..b'9' => {
+                b'0'..=b'9' => {
                     if token_start == self.offset {
                         is_expect_intager = true;
                     }
                 }
-
                 b'\n' => {
                     row_start_offset = self.curr_col;
                     self.curr_col += 1;
+                }
+                b':' if self.raw[self.offset + 1] == b':' => {
+                    self.offset += 2;
+                    self.curr_row_range.start = token_start - row_start_offset + 1;
+                    self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
+                    return Some(Token::Namespace);
                 }
                 char => {
                     if let Some(token) = Token::char_byte_to_token(char) {

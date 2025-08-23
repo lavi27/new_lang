@@ -1,4 +1,8 @@
-use std::{mem::take, ops::Range, panic};
+use std::{
+    mem::take,
+    ops::Range,
+    panic::{self, AssertUnwindSafe},
+};
 
 use crate::{
     compiler::token_stream::{Token, TokenStream},
@@ -239,10 +243,19 @@ impl ToRust for ValueExpr {
                         expr_vec_to_rust(args, ", "),
                     )
                 } else {
+                    format!(
+                        "{}{}({})",
+                        namespace_prefix,
+                        name,
+                        expr_vec_to_rust(args, ", "),
+                    )
                 }
             }
-            ValueExpr::ObjectChain(value_exprs) => todo!(),
-            ValueExpr::ObjectField { objcet, field } => todo!(),
+            ValueExpr::ObjectChain(value_exprs) => expr_vec_to_rust(value_exprs, "."),
+            ValueExpr::ObjectField { objcet, field } => {
+                format!("{}.{}", objcet.to_rust(), field.to_owned())
+            }
+
             ValueExpr::MethodCall {
                 object,
                 method,
@@ -354,6 +367,12 @@ impl Default for AbstractSyntaxTree {
     }
 }
 
+impl ToRust for AbstractSyntaxTree {
+    fn to_rust(&self) -> String {
+        self.main_routine.to_rust()
+    }
+}
+
 pub struct ASTParser {
     token_stream: TokenStream,
     filename: String,
@@ -379,7 +398,7 @@ impl ASTParser {
 
     pub fn parse(&mut self) -> Result<AbstractSyntaxTree, String> {
         while self.token_stream.peek().is_some() {
-            let line_res = panic::catch_unwind(|| self.parse_codeline());
+            let line_res = panic::catch_unwind(AssertUnwindSafe(|| self.parse_codeline()));
             let Ok(line) = line_res else {
                 let (col, Range { start, end }) = self.token_stream.get_curr_position();
                 let err_msg = unsafe { line_res.unwrap_err_unchecked() };
@@ -599,10 +618,10 @@ impl ASTParser {
             };
 
             result = Some(match infix_token {
-                Token::Plus => ValueExpr::Add(Box::new(left_val), Box::new(right_val)),
-                Token::Minus => ValueExpr::Sub(Box::new(left_val), Box::new(right_val)),
-                Token::Asterisk => ValueExpr::Mul(Box::new(left_val), Box::new(right_val)),
-                Token::Slash => ValueExpr::Div(Box::new(left_val), Box::new(right_val)),
+                Token::Plus => ValueExpr::Add(Box::new(left_val.clone()), Box::new(right_val)),
+                Token::Minus => ValueExpr::Sub(Box::new(left_val.clone()), Box::new(right_val)),
+                Token::Asterisk => ValueExpr::Mul(Box::new(left_val.clone()), Box::new(right_val)),
+                Token::Slash => ValueExpr::Div(Box::new(left_val.clone()), Box::new(right_val)),
                 _ => panic!("This compiler sucks."),
             });
         }

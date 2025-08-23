@@ -1,5 +1,3 @@
-use std::cmp;
-
 use crate::compiler::{
     ast_parser::{AbstractSyntaxTree, ToRust},
     CompileOption,
@@ -52,8 +50,6 @@ impl<'a> CodeGenerater<'a> {
     }
 
     pub fn new(ast: &'a AbstractSyntaxTree, option: CompileOption) -> Self {
-        let vec: Vec<i32> = Vec::new();
-
         Self {
             ast,
             option,
@@ -68,7 +64,7 @@ impl<'a> CodeGenerater<'a> {
             result += RUST_THREADING_BASE;
         }
 
-        result += self.ast.main_routine.to_rust().as_str();
+        result += self.ast.to_rust().as_str();
 
         result
     }
