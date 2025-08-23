@@ -40,7 +40,7 @@ fn main() {
                 tmp
             };
 
-            let output_code = compiler::Compiler::compile_static(
+            let Ok(output_code) = compiler::Compiler::compile_static(
                 Path::new(file_path)
                     .file_name()
                     .expect("msg")
@@ -49,7 +49,9 @@ fn main() {
                     .to_string(),
                 input_code,
                 CompileOption::default(),
-            );
+            ) else {
+                return;
+            };
 
             let stdout = File::open(outdir).expect("msg");
             let mut stdout = std::io::BufWriter::new(stdout);

@@ -27,7 +27,11 @@ impl Default for CompileOption {
 }
 
 impl Compiler {
-    pub fn compile_static(filename: String, input_code: String, opt: CompileOption) -> String {
+    pub fn compile_static(
+        filename: String,
+        input_code: String,
+        opt: CompileOption,
+    ) -> Result<String, ()> {
         let mut compiler = Self::new(filename, input_code, opt);
         compiler.compile()
     }
@@ -40,10 +44,12 @@ impl Compiler {
         }
     }
 
-    pub fn compile(&mut self) -> String {
+    pub fn compile(&mut self) -> Result<String, ()> {
         let ast = ASTParser::parse_static(self.filename.clone(), take(&mut self.input_code));
         let Ok(ast) = ast else {
-            unsafe { panic!("{}", ast.unwrap_err_unchecked()) };
+            unsafe { println!("{}", ast.unwrap_err_unchecked()) };
+
+            return Err(());
         };
 
         let output_code = CodeGenerater::generate_static(&ast, self.option.clone());
@@ -53,6 +59,6 @@ impl Compiler {
             todo!();
         }
 
-        output_code
+        Ok(output_code)
     }
 }

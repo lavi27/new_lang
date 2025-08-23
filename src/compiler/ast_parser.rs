@@ -397,6 +397,8 @@ impl ASTParser {
     }
 
     pub fn parse(&mut self) -> Result<AbstractSyntaxTree, String> {
+        // panic::set_hook(Box::new(|_| {}));
+
         while self.token_stream.peek().is_some() {
             let line_res = panic::catch_unwind(AssertUnwindSafe(|| self.parse_codeline()));
             let Ok(line) = line_res else {
@@ -407,6 +409,7 @@ impl ASTParser {
                     panic!("Hell nah.");
                 };
 
+                panic::take_hook();
                 return Err(format!(
                     "Syntax Error (at {}:{col}:{start}): {}",
                     self.filename, err_msg
@@ -416,6 +419,7 @@ impl ASTParser {
             self.result.main_routine.0.push(line);
         }
 
+        panic::take_hook();
         return Ok(take(&mut self.result));
     }
 
