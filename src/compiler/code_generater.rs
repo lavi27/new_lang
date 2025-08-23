@@ -1,41 +1,43 @@
-use crate::{
-    compiler::{ast_parser::AbstractSyntaxTree, CompileOption},
-    s,
+use std::cmp;
+
+use crate::compiler::{
+    ast_parser::{AbstractSyntaxTree, ToRust},
+    CompileOption,
 };
 
-const RUST_BASE: &str = "static mut THREAD_POOL: Option<Vec<Handle>> = None;
+const RUST_BASE: &str = "use std::cmp;
+
+macro_rules! newlang_forin {
+    (($( $iter_item:expr ), +), ($( $iter:expr ), +), $iter_body:block, $remain_body:block) => {
+        let shortest_len = ziped_iters.len();
+        let longest_len = [($($iter.len()), +)].into_iter().max();
+
+
+        for _ in 0..shortest_len {
+            let (($($iter_item), +)) = (($($iter.next().unwrap()), +));
+            $iter_body;
+        }
+
+
+        for _ in shortest_len..longest_len {
+            let (($($iter_item), +)) = (($($iter.next()), +));
+            $remain_body;
+        }
+    }
+}";
+
+const RUST_THREADING_BASE: &str = "static mut THREAD_POOL = None;
 
 fn get_thread_pool() {
     if THREAD_POOL.is_none() {
-        let mut result = Vec::with_capacity();
+        let mut result = Vec::with_capacity(std::thread::available_parallelism().unwarp());
         result.push()
 
         THREAD_POOL = Some(result);
     }
 
     THREAD_POOL.unwrap()
-}
-
-macro_rules! newlang_forin {
-    (($( $iter_item:expr ), +), ($( $iter:expr ), +), $iter_body:block, $remain_body:block) => {
-        let shortest_len = ziped_iters.len();
-        let longest_len = usize::max(($($iter.len()), +));
-
-        ($(let mut $iter_item;)+)
-
-        for _ in 0..shortest_len {
-            (($($iter_item), +)) = (($($iter.next().unwrap()), +));
-            $iter_body;
-        }
-
-        for _ in shortest_len..longest_len {
-            (($($iter_item), +)) = (($($iter.next().unwrap()), +));
-            $remain_body;
-        }
-    }
 }";
-
-const RUST_THREADING_BASE: &str = "static mut THREAD_POOL = None;";
 
 pub struct CodeGenerater<'a> {
     ast: &'a AbstractSyntaxTree,
@@ -50,6 +52,8 @@ impl<'a> CodeGenerater<'a> {
     }
 
     pub fn new(ast: &'a AbstractSyntaxTree, option: CompileOption) -> Self {
+        let vec: Vec<i32> = Vec::new();
+
         Self {
             ast,
             option,
@@ -58,13 +62,13 @@ impl<'a> CodeGenerater<'a> {
     }
 
     pub fn generate_rust(&mut self) -> String {
-        let mut result = s!(RUST_BASE);
+        let mut result = RUST_BASE.to_string();
 
         if self.ast.is_threading_used {
             result += RUST_THREADING_BASE;
         }
 
-        result += self.ast.main_routine.to_rust();
+        result += self.ast.main_routine.to_rust().as_str();
 
         result
     }

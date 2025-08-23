@@ -4,6 +4,8 @@ mod token_stream;
 #[macro_use]
 mod utils;
 
+use std::mem::take;
+
 use ast_parser::*;
 use code_generater::*;
 
@@ -13,21 +15,20 @@ pub struct Compiler {
     option: CompileOption,
 }
 
+#[derive(Clone, Copy)]
 pub struct CompileOption {
     transfile: bool,
 }
 
 impl Default for CompileOption {
     fn default() -> Self {
-        Self {
-            transfile: false,
-        }
+        Self { transfile: false }
     }
 }
 
 impl Compiler {
     pub fn compile_static(filename: String, input_code: String, opt: CompileOption) -> String {
-        let compiler = Self::new(filename, input_code, opt);
+        let mut compiler = Self::new(filename, input_code, opt);
         compiler.compile()
     }
 
@@ -35,23 +36,23 @@ impl Compiler {
         Self {
             filename,
             input_code,
-            option
+            option,
         }
     }
 
-    pub fn compile(&self) -> String {
-        let ast = ASTParser::parse_static(self.filename, self.input_code);
+    pub fn compile(&mut self) -> String {
+        let ast = ASTParser::parse_static(self.filename.clone(), take(&mut self.input_code));
         let Ok(ast) = ast else {
-            panic!("{}", ast.unwrap_err());
+            unsafe { panic!("{}", ast.unwrap_err_unchecked()) };
         };
 
-        let output_code = CodeGenerater::generate_static(&ast, self.option);
+        let output_code = CodeGenerater::generate_static(&ast, self.option.clone());
 
         if !self.option.transfile {
-        command::("rustc ...");
-            todo!();    
+            // command::("rustc ...");
+            todo!();
         }
 
-        output_code    
+        output_code
     }
 }
