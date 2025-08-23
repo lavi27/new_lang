@@ -172,25 +172,6 @@ impl Iterator for TokenStream {
 
         while self.offset < self.raw.len() {
             match self.raw[self.offset] {
-                b' ' | b'\t' => {
-                    if token_start != self.offset {
-                        let result =
-                            String::from_utf8(self.raw[token_start..self.offset - 1].to_vec())
-                                .unwrap();
-                        let result = if is_expect_intager {
-                            Token::Intager(result)
-                        } else {
-                            Token::String(result)
-                        };
-
-                        self.curr_row_range.start = token_start - row_start_offset + 1;
-                        self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
-                        self.offset += 1;
-                        return Some(result);
-                    } else {
-                        token_start += 1;
-                    }
-                }
                 b'0'..=b'9' => {
                     if token_start == self.offset {
                         is_expect_intager = true;
@@ -206,11 +187,29 @@ impl Iterator for TokenStream {
                     self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
                     return Some(Token::Namespace);
                 }
+                b' ' | b'\t' => {
+                    if token_start != self.offset {
+                        let result =
+                            String::from_utf8(self.raw[token_start..self.offset].to_vec()).unwrap();
+                        let result = if is_expect_intager {
+                            Token::Intager(result)
+                        } else {
+                            Token::String(result)
+                        };
+
+                        self.curr_row_range.start = token_start - row_start_offset + 1;
+                        self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
+                        self.offset += 1;
+                        return Some(result);
+                    } else {
+                        token_start += 1;
+                    }
+                }
                 char => {
                     if let Some(token) = Token::char_byte_to_token(char) {
                         if token_start != self.offset {
                             let result =
-                                String::from_utf8(self.raw[token_start..self.offset - 1].to_vec())
+                                String::from_utf8(self.raw[token_start..self.offset].to_vec())
                                     .unwrap();
                             let result = if is_expect_intager {
                                 Token::Intager(result)
