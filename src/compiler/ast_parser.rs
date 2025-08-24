@@ -624,6 +624,7 @@ impl ASTParser {
         self._try_parse_infix_value_exprs_recursive(first, 0)
     }
 
+    /// # DONT CALL THIS.
     fn _try_parse_infix_value_exprs_recursive(
         &mut self,
         left_val: ValueExpr,
