@@ -21,7 +21,7 @@ pub trait ToRust {
 }
 
 #[derive(Clone)]
-enum Node {
+enum Expr {
     EqualAssign {
         variable: ValueExpr,
         value: ValueExpr,
@@ -71,18 +71,18 @@ enum Node {
     NamespaceChain(NamespaceChain),
 }
 
-impl ToRust for Node {
+impl ToRust for Expr {
     fn to_rust(&self) -> String {
         match self {
-            Node::CodeBlock(expr) => expr.to_rust() + ";",
-            Node::ValueExpr(expr) => expr.to_rust() + ";",
-            Node::VariableDefineExpr(expr) => expr.to_rust() + ";",
-            Node::TypeExpr(expr) => expr.to_rust() + ";",
-            Node::NamespaceChain(expr) => expr.to_rust() + ";",
-            Node::EqualAssign { variable, value } => {
+            Self::CodeBlock(expr) => expr.to_rust() + ";",
+            Self::ValueExpr(expr) => expr.to_rust() + ";",
+            Self::VariableDefineExpr(expr) => expr.to_rust() + ";",
+            Self::TypeExpr(expr) => expr.to_rust() + ";",
+            Self::NamespaceChain(expr) => expr.to_rust() + ";",
+            Self::EqualAssign { variable, value } => {
                 format!("{} = {};", variable.to_rust(), value.to_rust())
             }
-            Node::If {
+            Self::If {
                 condition,
                 if_body,
                 else_body,
@@ -98,7 +98,7 @@ impl ToRust for Node {
                     format!("if {} {{ {} }};", condition.to_rust(), if_body.to_rust())
                 }
             }
-            Node::ForIn {
+            Self::ForIn {
                 iter_item,
                 iter,
                 iter_body,
@@ -121,7 +121,7 @@ impl ToRust for Node {
                     )
                 }
             }
-            Node::ParallelForIn {
+            Self::ParallelForIn {
                 iter_item,
                 iter,
                 iter_body,
@@ -144,13 +144,13 @@ impl ToRust for Node {
                     )
                 }
             }
-            Node::VariableLet { define_expr, value } => {
+            Self::VariableLet { define_expr, value } => {
                 format!("let {} = {};", define_expr.to_rust(), value.to_rust())
             }
-            Node::VariableVar { define_expr, value } => {
+            Self::VariableVar { define_expr, value } => {
                 format!("let mut {} = {};", define_expr.to_rust(), value.to_rust())
             }
-            Node::FnDefine {
+            Self::FnDefine {
                 name,
                 type_args,
                 args,
@@ -176,7 +176,7 @@ impl ToRust for Node {
                     )
                 }
             }
-            Node::Return(expr) => format!("return {};", expr.to_rust()),
+            Self::Return(expr) => format!("return {};", expr.to_rust()),
         }
     }
 }
@@ -216,18 +216,18 @@ enum ValueExpr {
 impl ToRust for ValueExpr {
     fn to_rust(&self) -> String {
         match self {
-            ValueExpr::IntagerLiteral(int) => int.to_string(),
-            ValueExpr::FloatLiteral(float) => float.to_string(),
-            ValueExpr::StringLiteral(str) => str.to_owned(),
-            ValueExpr::Add(lvel, rvel) => format!("{}+{}", lvel.to_rust(), rvel.to_rust()),
-            ValueExpr::Sub(lvel, rvel) => format!("{}-{}", lvel.to_rust(), rvel.to_rust()),
-            ValueExpr::Mul(lvel, rvel) => format!("{}*{}", lvel.to_rust(), rvel.to_rust()),
-            ValueExpr::Div(lvel, rvel) => format!("{}/{}", lvel.to_rust(), rvel.to_rust()),
-            ValueExpr::LessThan(lvel, rvel) => format!("{}<{}", lvel.to_rust(), rvel.to_rust()),
-            ValueExpr::GreaterThan(lvel, rvel) => format!("{}>{}", lvel.to_rust(), rvel.to_rust()),
-            ValueExpr::Tuple(exprs) => format!("({})", expr_vec_to_rust(exprs, ", ")),
-            ValueExpr::Variable(var) => var.to_string(),
-            ValueExpr::FnCall {
+            Self::IntagerLiteral(int) => int.to_string(),
+            Self::FloatLiteral(float) => float.to_string(),
+            Self::StringLiteral(str) => str.to_owned(),
+            Self::Add(lvel, rvel) => format!("{}+{}", lvel.to_rust(), rvel.to_rust()),
+            Self::Sub(lvel, rvel) => format!("{}-{}", lvel.to_rust(), rvel.to_rust()),
+            Self::Mul(lvel, rvel) => format!("{}*{}", lvel.to_rust(), rvel.to_rust()),
+            Self::Div(lvel, rvel) => format!("{}/{}", lvel.to_rust(), rvel.to_rust()),
+            Self::LessThan(lvel, rvel) => format!("{}<{}", lvel.to_rust(), rvel.to_rust()),
+            Self::GreaterThan(lvel, rvel) => format!("{}>{}", lvel.to_rust(), rvel.to_rust()),
+            Self::Tuple(exprs) => format!("({})", expr_vec_to_rust(exprs, ", ")),
+            Self::Variable(var) => var.to_string(),
+            Self::FnCall {
                 namespace,
                 name,
                 type_args,
@@ -256,12 +256,12 @@ impl ToRust for ValueExpr {
                     )
                 }
             }
-            ValueExpr::ObjectChain(value_exprs) => expr_vec_to_rust(value_exprs, "."),
-            ValueExpr::ObjectField { objcet, field } => {
+            Self::ObjectChain(value_exprs) => expr_vec_to_rust(value_exprs, "."),
+            Self::ObjectField { objcet, field } => {
                 format!("{}.{}", objcet.to_rust(), field.to_owned())
             }
 
-            ValueExpr::MethodCall {
+            Self::MethodCall {
                 object,
                 method,
                 type_args,
@@ -298,9 +298,9 @@ enum VariableDefineExpr {
 impl ToRust for VariableDefineExpr {
     fn to_rust(&self) -> String {
         match self {
-            VariableDefineExpr::Name(name) => name.to_owned(),
-            VariableDefineExpr::WithType(name, type_) => format!("{name}: {}", type_.to_rust()),
-            VariableDefineExpr::TupleDestruct(items) => expr_vec_to_rust(items, ", "),
+            Self::Name(name) => name.to_owned(),
+            Self::WithType(name, type_) => format!("{name}: {}", type_.to_rust()),
+            Self::TupleDestruct(items) => expr_vec_to_rust(items, ", "),
         }
     }
 }
@@ -315,13 +315,13 @@ enum TypeExpr {
 impl ToRust for TypeExpr {
     fn to_rust(&self) -> String {
         match self {
-            TypeExpr::Name(name) => name.to_owned(),
-            TypeExpr::Tuple(types) => types
+            Self::Name(name) => name.to_owned(),
+            Self::Tuple(types) => types
                 .iter()
                 .map(|i| i.to_rust())
                 .collect::<Vec<String>>()
                 .join(", "),
-            TypeExpr::WithArgs(name, args) => {
+            Self::WithArgs(name, args) => {
                 format!("{name}<{}>", expr_vec_to_rust(args, ", "),)
             }
         }
@@ -348,7 +348,7 @@ impl ToRust for NamespaceChain {
 }
 
 #[derive(Clone)]
-struct CodeBlock(Vec<Node>);
+struct CodeBlock(Vec<Expr>);
 
 impl ToRust for CodeBlock {
     fn to_rust(&self) -> String {
@@ -547,7 +547,7 @@ impl ASTParser {
     }
 
     /// Validate is it macro expression by current token stream. And parse the expression.
-    fn try_parse_macro(&mut self, name: String, namespace: NamespaceChain) -> Option<Node> {
+    fn try_parse_macro(&mut self, name: String, namespace: NamespaceChain) -> Option<Expr> {
         if !self.is_next_token(Token::Exclamationmark) {
             return None;
         }
@@ -560,7 +560,7 @@ impl ASTParser {
             return None;
         };
 
-        Some(Node::Macro {
+        Some(Expr::Macro {
             namespace,
             name,
             args,
@@ -794,7 +794,7 @@ impl ASTParser {
         Some(ValueExpr::ObjectChain(chain))
     }
 
-    fn parse_codeline(&mut self) -> Node {
+    fn parse_codeline(&mut self) -> Expr {
         let Some(curr_token) = self.token_stream.next() else {
             panic!("Expected code line. But file is ended.");
         };
@@ -811,7 +811,7 @@ impl ASTParser {
 
                     self.assert_next_token(Token::Semicolon);
 
-                    Node::If {
+                    Expr::If {
                         condition,
                         if_body,
                         else_body,
@@ -831,7 +831,7 @@ impl ASTParser {
 
                     self.assert_next_token(Token::Semicolon);
 
-                    Node::ForIn {
+                    Expr::ForIn {
                         iter_item,
                         iter,
                         iter_body,
@@ -849,7 +849,7 @@ impl ASTParser {
                     let value = self.parse_value_expr();
                     self.assert_next_token(Token::Semicolon);
 
-                    Node::VariableLet { define_expr, value }
+                    Expr::VariableLet { define_expr, value }
                 }
                 "var" => {
                     let define_expr = self.parse_variable_define_expr();
@@ -858,7 +858,7 @@ impl ASTParser {
                     let value = self.parse_value_expr();
                     self.assert_next_token(Token::Semicolon);
 
-                    Node::VariableVar { define_expr, value }
+                    Expr::VariableVar { define_expr, value }
                 }
                 "fn" => {
                     let name = self.get_string_token();
@@ -878,7 +878,7 @@ impl ASTParser {
 
                     let body = self.parse_codeblock();
 
-                    Node::FnDefine {
+                    Expr::FnDefine {
                         name,
                         type_args,
                         return_type,
@@ -889,7 +889,7 @@ impl ASTParser {
                 "return" => {
                     let value = self.parse_value_expr();
 
-                    Node::Return(value)
+                    Expr::Return(value)
                 }
                 thing => {
                     let (namespace, str) = self.try_parse_namespace(str.clone());
@@ -897,7 +897,7 @@ impl ASTParser {
                     if let Some(chain_expr) =
                         self.try_parse_object_chain(ValueExpr::Variable(thing.to_string()))
                     {
-                        Node::ValueExpr(chain_expr)
+                        Expr::ValueExpr(chain_expr)
                     } else {
                         todo!()
                     }
