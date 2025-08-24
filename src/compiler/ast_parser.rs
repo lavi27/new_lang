@@ -521,13 +521,6 @@ impl ASTParser {
             };
         }
     }
-    fn get_infix_token_priority(&mut self, infix_token: Token) -> Option<usize> {
-        Some(match infix_token {
-            Token::Plus | Token::Minus => 1,
-            Token::Asterisk | Token::Slash => 2,
-            _ => return None,
-        })
-    }
 
     fn parse_variable_define_expr(&mut self) -> VariableDefineExpr {
         let Some(curr_token) = self.token_stream.next() else {
@@ -688,8 +681,10 @@ impl ASTParser {
             let Some(infix_token) = self.token_stream.next() else {
                 break;
             };
-            let Some(priority) = self.get_infix_token_priority(infix_token.clone()) else {
-                break;
+            let priority = match infix_token {
+                Token::Plus | Token::Minus => 1,
+                Token::Asterisk | Token::Slash => 2,
+                _ => break,
             };
 
             if priority < min_priority {
