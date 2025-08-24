@@ -58,6 +58,11 @@ enum Node {
         args: Vec<VariableDefineExpr>,
         body: CodeBlock,
     },
+    Macro {
+        namespace: NamespaceChain,
+        name: String,
+        args: Vec<ValueExpr>,
+    },
     Return(ValueExpr),
     ValueExpr(ValueExpr),
     CodeBlock(CodeBlock),
@@ -485,28 +490,6 @@ impl ASTParser {
         (NamespaceChain(items), last)
     }
 
-    fn parse_type_args(&mut self) -> Vec<TypeExpr> {
-        let mut items = Vec::new();
-
-        if !self.is_next_token(Token::LeftAngleBracket) {
-            return items;
-        }
-
-        if self.is_next_token(Token::RightAngleBracket) {
-            return items;
-        }
-
-        items.push(self.parse_type_expr());
-
-        while !self.is_next_token(Token::RightAngleBracket) {
-            self.assert_next_token(Token::Comma);
-
-            items.push(self.parse_type_expr());
-        }
-
-        return items;
-    }
-
     fn parse_type_expr(&mut self) -> TypeExpr {
         if self.is_next_token(Token::LeftParen) {
             let mut items = Vec::new();
@@ -528,7 +511,7 @@ impl ASTParser {
             let str = self.get_string_token();
 
             if self.is_next_token(Token::LeftAngleBracket) {
-                let type_args = self.parse_type_args();
+                let type_args = self.parse_comma_type_exprs(Token::RightAngleBracket);
 
                 return TypeExpr::WithArgs(str, type_args);
             } else {
@@ -543,29 +526,45 @@ impl ASTParser {
         fn_name: String,
         namespace: NamespaceChain,
     ) -> Option<ValueExpr> {
-        if self.is_next_token(Token::LeftParen) {
-            let args = self.parse_comma_value_exprs(Token::RightParen);
+        let type_args = self
+            .is_next_token(Token::LeftAngleBracket)
+            .then(|| self.parse_comma_type_exprs(Token::RightAngleBracket));
 
-            Some(ValueExpr::FnCall {
-                namespace,
-                name: fn_name,
-                type_args: None,
-                args,
-            })
-        } else if self.is_next_token(Token::LeftAngleBracket) {
-            let type_args = self.parse_type_args();
-            self.assert_next_token(Token::LeftParen);
-            let args = self.parse_comma_value_exprs(Token::RightParen);
-
-            Some(ValueExpr::FnCall {
-                namespace,
-                name: fn_name,
-                type_args: Some(type_args),
-                args,
-            })
-        } else {
-            None
+        if (self.token_stream.peek() != Some(Token::LeftParen)) && type_args.is_none() {
+            return None;
         }
+
+        self.assert_next_token(Token::LeftParen);
+
+        let args = self.parse_comma_value_exprs(Token::RightParen);
+
+        Some(ValueExpr::FnCall {
+            namespace,
+            name: fn_name,
+            type_args,
+            args,
+        })
+    }
+
+    /// Validate is it macro expression by current token stream. And parse the expression.
+    fn try_parse_macro(&mut self, name: String, namespace: NamespaceChain) -> Option<Node> {
+        if !self.is_next_token(Token::Exclamationmark) {
+            return None;
+        }
+
+        let args = if self.is_next_token(Token::LeftParen) {
+            self.parse_comma_value_exprs(Token::RightParen)
+        } else if self.is_next_token(Token::LeftBracket) {
+            self.parse_comma_value_exprs(Token::LeftBracket)
+        } else {
+            return None;
+        };
+
+        Some(Node::Macro {
+            namespace,
+            name,
+            args,
+        })
     }
 
     fn parse_comma_value_exprs(&mut self, end_token: Token) -> Vec<ValueExpr> {
@@ -589,7 +588,7 @@ impl ASTParser {
         return items;
     }
 
-    fn try_parse_comma_define_exprs(&mut self, end_token: Token) -> Vec<VariableDefineExpr> {
+    fn parse_comma_define_exprs(&mut self, end_token: Token) -> Vec<VariableDefineExpr> {
         let mut items = Vec::new();
 
         if self.is_next_token(end_token.clone()) {
@@ -602,6 +601,28 @@ impl ASTParser {
             self.assert_next_token(Token::Comma);
 
             items.push(self.parse_variable_define_expr());
+        }
+
+        return items;
+    }
+
+    fn parse_comma_type_exprs(&mut self, end_token: Token) -> Vec<TypeExpr> {
+        let mut items = Vec::new();
+
+        if !self.is_next_token(end_token.clone()) {
+            return items;
+        }
+
+        if self.is_next_token(end_token.clone()) {
+            return items;
+        }
+
+        items.push(self.parse_type_expr());
+
+        while !self.is_next_token(end_token.clone()) {
+            self.assert_next_token(Token::Comma);
+
+            items.push(self.parse_type_expr());
         }
 
         return items;
@@ -735,7 +756,7 @@ impl ASTParser {
                 return VariableDefineExpr::Name(str);
             }
         } else if curr_token == Token::LeftParen {
-            let items = self.try_parse_comma_define_exprs(Token::RightParen);
+            let items = self.parse_comma_define_exprs(Token::RightParen);
             return VariableDefineExpr::TupleDestruct(items);
         } else {
             panic!("Expected variable define expression. Found '{curr_token}'.");
@@ -784,11 +805,9 @@ impl ASTParser {
                     let condition = self.parse_value_expr();
                     let if_body = self.parse_codeblock();
 
-                    let else_body = if self.is_next_token(Token::String(s!("else"))) {
-                        Some(self.parse_codeblock())
-                    } else {
-                        None
-                    };
+                    let else_body = self
+                        .is_next_token(Token::String(s!("else")))
+                        .then(|| self.parse_codeblock());
 
                     self.assert_next_token(Token::Semicolon);
 
@@ -806,11 +825,9 @@ impl ASTParser {
                     let iter = self.parse_value_expr();
                     let iter_body = self.parse_codeblock();
 
-                    let remain_body = if self.is_next_token(Token::String(s!("remain"))) {
-                        Some(self.parse_codeblock())
-                    } else {
-                        None
-                    };
+                    let remain_body = self
+                        .is_next_token(Token::String(s!("remain")))
+                        .then(|| self.parse_codeblock());
 
                     self.assert_next_token(Token::Semicolon);
 
@@ -847,9 +864,11 @@ impl ASTParser {
                     let name = self.get_string_token();
 
                     self.assert_next_token(Token::LeftParen);
-                    let args = self.try_parse_comma_define_exprs(Token::RightParen);
+                    let args = self.parse_comma_define_exprs(Token::RightParen);
 
-                    let type_args = self.parse_type_args();
+                    let type_args = self
+                        .is_next_token(Token::LeftAngleBracket)
+                        .then(|| self.parse_comma_type_exprs(Token::RightAngleBracket));
 
                     let return_type = if self.is_next_token(Token::Colon) {
                         self.parse_type_expr()
@@ -861,7 +880,7 @@ impl ASTParser {
 
                     Node::FnDefine {
                         name,
-                        type_args: Some(type_args),
+                        type_args,
                         return_type,
                         args,
                         body,
@@ -873,7 +892,7 @@ impl ASTParser {
                     Node::Return(value)
                 }
                 thing => {
-                    // let (namespace, str) = self.try_parse_namespace(str.clone());
+                    let (namespace, str) = self.try_parse_namespace(str.clone());
 
                     if let Some(chain_expr) =
                         self.try_parse_object_chain(ValueExpr::Variable(thing.to_string()))
