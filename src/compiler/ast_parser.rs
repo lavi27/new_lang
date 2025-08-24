@@ -58,11 +58,7 @@ enum Expr {
         args: Vec<VariableDefineExpr>,
         body: CodeBlock,
     },
-    MacroCall {
-        namespace: NamespaceChain,
-        name: String,
-        args: Vec<ValueExpr>,
-    },
+
     Return(ValueExpr),
     ValueExpr(ValueExpr),
     CodeBlock(CodeBlock),
@@ -176,18 +172,6 @@ impl ToRust for Expr {
                     )
                 }
             }
-            Self::MacroCall {
-                namespace,
-                name,
-                args,
-            } => {
-                format!(
-                    "{}{}!({});",
-                    namespace.to_rust(),
-                    name,
-                    expr_vec_to_rust(args, ", ")
-                )
-            }
             Self::Return(expr) => format!("return {};", expr.to_rust()),
         }
     }
@@ -221,6 +205,11 @@ enum ValueExpr {
         object: Box<ValueExpr>,
         method: String,
         type_args: Option<Vec<TypeExpr>>,
+        args: Vec<ValueExpr>,
+    },
+    MacroCall {
+        namespace: NamespaceChain,
+        name: String,
         args: Vec<ValueExpr>,
     },
 }
@@ -295,6 +284,18 @@ impl ToRust for ValueExpr {
                         expr_vec_to_rust(args, ", ")
                     )
                 }
+            }
+            Self::MacroCall {
+                namespace,
+                name,
+                args,
+            } => {
+                format!(
+                    "{}{}!({});",
+                    namespace.to_rust(),
+                    name,
+                    expr_vec_to_rust(args, ", ")
+                )
             }
         }
     }
@@ -561,6 +562,7 @@ impl ASTParser {
     // # TRY- METHODS #
     // 조건 검증과 처리를 동시에 수행하는 매서드들, 여러번 호출해도 무방한 것들. 인자 외에는 호출시 조건이 필요 없음.
     // if let Some(_) = ... 구조로 사용할 것.
+    // 호출 순서에 민감함!
 
     fn try_parse_namespace(&mut self, name: String) -> (NamespaceChain, String) {
         let mut items = vec![name];
@@ -588,7 +590,6 @@ impl ASTParser {
         }
 
         self.assert_next_token(Token::LeftParen);
-
         let args = self.parse_comma_value_exprs(Token::RightParen);
 
         Some(ValueExpr::FnCall {
@@ -599,7 +600,7 @@ impl ASTParser {
         })
     }
 
-    fn try_parse_macro(&mut self, name: String, namespace: NamespaceChain) -> Option<Expr> {
+    fn try_parse_macro(&mut self, name: String, namespace: NamespaceChain) -> Option<ValueExpr> {
         if !self.is_next_token(Token::Exclamationmark) {
             return None;
         }
@@ -612,7 +613,7 @@ impl ASTParser {
             return None;
         };
 
-        Some(Expr::MacroCall {
+        Some(ValueExpr::MacroCall {
             namespace,
             name,
             args,
@@ -790,7 +791,9 @@ impl ASTParser {
             Token::String(str) => {
                 let (namespace, str) = self.try_parse_namespace(str.clone());
 
-                if let Some(fn_expr) = self.try_parse_fn_call(str.clone(), namespace) {
+                if let Some(macro_expr) = self.try_parse_macro(str.clone(), namespace.clone()) {
+                    macro_expr
+                } else if let Some(fn_expr) = self.try_parse_fn_call(str.clone(), namespace) {
                     fn_expr
                 } else if let Some(chain_expr) =
                     self.try_parse_object_chain(ValueExpr::Variable(str.clone()))
@@ -815,21 +818,20 @@ impl ASTParser {
     }
 
     fn parse_codeline(&mut self) -> Expr {
-        let Some(curr_token) = self.token_stream.next() else {
+        let Some(curr_token) = self.token_stream.peek() else {
             panic!("Expected code line. But file is ended.");
         };
 
         match curr_token {
             Token::String(str) => match str.as_str() {
                 "if" => {
+                    self.token_stream.next();
                     let condition = self.parse_value_expr();
                     let if_body = self.parse_codeblock();
 
                     let else_body = self
                         .is_next_token(Token::String(s!("else")))
                         .then(|| self.parse_codeblock());
-
-                    self.assert_next_token(Token::Semicolon);
 
                     Expr::If {
                         condition,
@@ -838,6 +840,7 @@ impl ASTParser {
                     }
                 }
                 "for" => {
+                    self.token_stream.next();
                     let iter_item = self.parse_variable_define_expr();
 
                     self.assert_next_token(Token::String(s!("in")));
@@ -849,8 +852,6 @@ impl ASTParser {
                         .is_next_token(Token::String(s!("remain")))
                         .then(|| self.parse_codeblock());
 
-                    self.assert_next_token(Token::Semicolon);
-
                     Expr::ForIn {
                         iter_item,
                         iter,
@@ -859,10 +860,12 @@ impl ASTParser {
                     }
                 }
                 "parallelFor" => {
+                    self.token_stream.next();
                     self.result.is_threading_used = true;
                     todo!()
                 }
                 "let" => {
+                    self.token_stream.next();
                     let define_expr = self.parse_variable_define_expr();
                     self.assert_next_token(Token::Equal);
 
@@ -872,6 +875,7 @@ impl ASTParser {
                     Expr::VariableLet { define_expr, value }
                 }
                 "var" => {
+                    self.token_stream.next();
                     let define_expr = self.parse_variable_define_expr();
                     self.assert_next_token(Token::Equal);
 
@@ -881,14 +885,15 @@ impl ASTParser {
                     Expr::VariableVar { define_expr, value }
                 }
                 "fn" => {
+                    self.token_stream.next();
                     let name = self.get_string_token();
-
-                    self.assert_next_token(Token::LeftParen);
-                    let args = self.parse_comma_define_exprs(Token::RightParen);
 
                     let type_args = self
                         .is_next_token(Token::LeftAngleBracket)
                         .then(|| self.parse_comma_type_exprs(Token::RightAngleBracket));
+
+                    self.assert_next_token(Token::LeftParen);
+                    let args = self.parse_comma_define_exprs(Token::RightParen);
 
                     let return_type = if self.is_next_token(Token::Colon) {
                         self.parse_type_expr()
@@ -907,28 +912,24 @@ impl ASTParser {
                     }
                 }
                 "return" => {
+                    self.token_stream.next();
                     let value = self.parse_value_expr();
+
+                    self.assert_next_token(Token::Semicolon);
 
                     Expr::Return(value)
                 }
-                thing => {
-                    let (namespace, str) = self.try_parse_namespace(str.clone());
+                _ => {
+                    let result = Expr::ValueExpr(self.parse_value_expr());
+                    self.assert_next_token(Token::Semicolon);
 
-                    if let Some(chain_expr) =
-                        self.try_parse_object_chain(ValueExpr::Variable(thing.to_string()))
-                    {
-                        Expr::ValueExpr(chain_expr)
-                    } else if let Some(macro_expr) =
-                        self.try_parse_macro(str.clone(), namespace.clone())
-                    {
-                        macro_expr
-                    } else if let Some(call_expr) = self.try_parse_fn_call(str, namespace) {
-                        Expr::ValueExpr(call_expr)
-                    } else {
-                        todo!()
-                    }
+                    result
                 }
             },
+            Token::Semicolon => {
+                self.token_stream.next();
+                self.parse_codeline()
+            }
             other => {
                 panic!("Unexpected expression '{other}'.");
             }
