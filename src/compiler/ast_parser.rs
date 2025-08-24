@@ -446,6 +446,8 @@ impl ASTParser {
         return Ok(take(&mut self.result));
     }
 
+    // # LOW LEVEL METHODS #
+
     fn assert_next_token(&mut self, token: Token) {
         let Some(curr_token) = self.token_stream.next() else {
             panic!("Expected '{token}'. But file is ended.");
@@ -490,18 +492,6 @@ impl ASTParser {
         }
     }
 
-    fn try_parse_namespace(&mut self, name: String) -> (NamespaceChain, String) {
-        let mut items = vec![name];
-
-        while self.is_next_token(Token::Namespace) {
-            items.push(self.get_string_token());
-        }
-
-        let last = items.pop().unwrap();
-
-        (NamespaceChain(items), last)
-    }
-
     fn parse_type_expr(&mut self) -> TypeExpr {
         if self.is_next_token(Token::LeftParen) {
             let mut items = Vec::new();
@@ -531,53 +521,35 @@ impl ASTParser {
             };
         }
     }
-
-    /// Validate is it fn call expression by current token stream. And parse the expression.
-    fn try_parse_fn_call(
-        &mut self,
-        fn_name: String,
-        namespace: NamespaceChain,
-    ) -> Option<ValueExpr> {
-        let type_args = self
-            .is_next_token(Token::LeftAngleBracket)
-            .then(|| self.parse_comma_type_exprs(Token::RightAngleBracket));
-
-        if (self.token_stream.peek() != Some(Token::LeftParen)) && type_args.is_none() {
-            return None;
-        }
-
-        self.assert_next_token(Token::LeftParen);
-
-        let args = self.parse_comma_value_exprs(Token::RightParen);
-
-        Some(ValueExpr::FnCall {
-            namespace,
-            name: fn_name,
-            type_args,
-            args,
+    fn get_infix_token_priority(&mut self, infix_token: Token) -> Option<usize> {
+        Some(match infix_token {
+            Token::Plus | Token::Minus => 1,
+            Token::Asterisk | Token::Slash => 2,
+            _ => return None,
         })
     }
 
-    /// Validate is it macro expression by current token stream. And parse the expression.
-    fn try_parse_macro(&mut self, name: String, namespace: NamespaceChain) -> Option<Expr> {
-        if !self.is_next_token(Token::Exclamationmark) {
-            return None;
-        }
-
-        let args = if self.is_next_token(Token::LeftParen) {
-            self.parse_comma_value_exprs(Token::RightParen)
-        } else if self.is_next_token(Token::LeftBracket) {
-            self.parse_comma_value_exprs(Token::LeftBracket)
-        } else {
-            return None;
+    fn parse_variable_define_expr(&mut self) -> VariableDefineExpr {
+        let Some(curr_token) = self.token_stream.next() else {
+            panic!("Expected variable define expression. But file is ended.");
         };
 
-        Some(Expr::MacroCall {
-            namespace,
-            name,
-            args,
-        })
+        if let Token::String(str) = curr_token {
+            if self.is_next_token(Token::Colon) {
+                let type_expr = self.parse_type_expr();
+                return VariableDefineExpr::WithType(str, type_expr);
+            } else {
+                return VariableDefineExpr::Name(str);
+            }
+        } else if curr_token == Token::LeftParen {
+            let items = self.parse_comma_define_exprs(Token::RightParen);
+            return VariableDefineExpr::TupleDestruct(items);
+        } else {
+            panic!("Expected variable define expression. Found '{curr_token}'.");
+        }
     }
+
+    // # PARSE_COMMA_- METHODS #
 
     fn parse_comma_value_exprs(&mut self, end_token: Token) -> Vec<ValueExpr> {
         let mut items = Vec::new();
@@ -640,11 +612,64 @@ impl ASTParser {
         return items;
     }
 
-    fn get_infix_token_priority(&mut self, infix_token: Token) -> Option<usize> {
-        Some(match infix_token {
-            Token::Plus | Token::Minus => 1,
-            Token::Asterisk | Token::Slash => 2,
-            _ => return None,
+    // # TRY- METHODS #
+
+    fn try_parse_namespace(&mut self, name: String) -> (NamespaceChain, String) {
+        let mut items = vec![name];
+
+        while self.is_next_token(Token::Namespace) {
+            items.push(self.get_string_token());
+        }
+
+        let last = items.pop().unwrap();
+
+        (NamespaceChain(items), last)
+    }
+
+    /// Validate is it fn call expression by current token stream. And parse the expression.
+    fn try_parse_fn_call(
+        &mut self,
+        fn_name: String,
+        namespace: NamespaceChain,
+    ) -> Option<ValueExpr> {
+        let type_args = self
+            .is_next_token(Token::LeftAngleBracket)
+            .then(|| self.parse_comma_type_exprs(Token::RightAngleBracket));
+
+        if (self.token_stream.peek() != Some(Token::LeftParen)) && type_args.is_none() {
+            return None;
+        }
+
+        self.assert_next_token(Token::LeftParen);
+
+        let args = self.parse_comma_value_exprs(Token::RightParen);
+
+        Some(ValueExpr::FnCall {
+            namespace,
+            name: fn_name,
+            type_args,
+            args,
+        })
+    }
+
+    /// Validate is it macro expression by current token stream. And parse the expression.
+    fn try_parse_macro(&mut self, name: String, namespace: NamespaceChain) -> Option<Expr> {
+        if !self.is_next_token(Token::Exclamationmark) {
+            return None;
+        }
+
+        let args = if self.is_next_token(Token::LeftParen) {
+            self.parse_comma_value_exprs(Token::RightParen)
+        } else if self.is_next_token(Token::LeftBracket) {
+            self.parse_comma_value_exprs(Token::LeftBracket)
+        } else {
+            return None;
+        };
+
+        Some(Expr::MacroCall {
+            namespace,
+            name,
+            args,
         })
     }
 
@@ -689,6 +714,39 @@ impl ASTParser {
 
         result
     }
+
+    fn try_parse_object_chain(&mut self, first: ValueExpr) -> Option<ValueExpr> {
+        let mut chain = Vec::new();
+        let mut last_expr = first;
+
+        while self.is_next_token(Token::Period) {
+            let token = self.get_string_token();
+
+            let expr = if let Some(ValueExpr::FnCall {
+                name,
+                type_args,
+                args,
+                ..
+            }) = self.try_parse_fn_call(token.clone(), NamespaceChain::new())
+            {
+                ValueExpr::MethodCall {
+                    object: Box::new(last_expr.clone()),
+                    method: name,
+                    type_args,
+                    args,
+                }
+            } else {
+                ValueExpr::Variable(token)
+            };
+
+            chain.push(expr.clone());
+            last_expr = expr;
+        }
+
+        Some(ValueExpr::ObjectChain(chain))
+    }
+
+    // # HIGH LEVEL METHODS #
 
     fn parse_value_expr(&mut self) -> ValueExpr {
         let Some(curr_token) = self.token_stream.next() else {
@@ -753,57 +811,6 @@ impl ASTParser {
         } else {
             return result;
         }
-    }
-
-    fn parse_variable_define_expr(&mut self) -> VariableDefineExpr {
-        let Some(curr_token) = self.token_stream.next() else {
-            panic!("Expected variable define expression. But file is ended.");
-        };
-
-        if let Token::String(str) = curr_token {
-            if self.is_next_token(Token::Colon) {
-                let type_expr = self.parse_type_expr();
-                return VariableDefineExpr::WithType(str, type_expr);
-            } else {
-                return VariableDefineExpr::Name(str);
-            }
-        } else if curr_token == Token::LeftParen {
-            let items = self.parse_comma_define_exprs(Token::RightParen);
-            return VariableDefineExpr::TupleDestruct(items);
-        } else {
-            panic!("Expected variable define expression. Found '{curr_token}'.");
-        }
-    }
-
-    fn try_parse_object_chain(&mut self, first: ValueExpr) -> Option<ValueExpr> {
-        let mut chain = Vec::new();
-        let mut last_expr = first;
-
-        while self.is_next_token(Token::Period) {
-            let token = self.get_string_token();
-
-            let expr = if let Some(ValueExpr::FnCall {
-                name,
-                type_args,
-                args,
-                ..
-            }) = self.try_parse_fn_call(token.clone(), NamespaceChain::new())
-            {
-                ValueExpr::MethodCall {
-                    object: Box::new(last_expr.clone()),
-                    method: name,
-                    type_args,
-                    args,
-                }
-            } else {
-                ValueExpr::Variable(token)
-            };
-
-            chain.push(expr.clone());
-            last_expr = expr;
-        }
-
-        Some(ValueExpr::ObjectChain(chain))
     }
 
     fn parse_codeline(&mut self) -> Expr {
@@ -910,6 +917,12 @@ impl ASTParser {
                         self.try_parse_object_chain(ValueExpr::Variable(thing.to_string()))
                     {
                         Expr::ValueExpr(chain_expr)
+                    } else if let Some(macro_expr) =
+                        self.try_parse_macro(str.clone(), namespace.clone())
+                    {
+                        macro_expr
+                    } else if let Some(call_expr) = self.try_parse_fn_call(str, namespace) {
+                        Expr::ValueExpr(call_expr)
                     } else {
                         todo!()
                     }
