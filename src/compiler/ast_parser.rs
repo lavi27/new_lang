@@ -303,6 +303,7 @@ impl ToRust for VariableDefineExpr {
 #[derive(Clone)]
 enum TypeExpr {
     Name(String),
+    Tuple(Vec<TypeExpr>),
     WithArgs(String, Vec<TypeExpr>),
 }
 
@@ -310,6 +311,11 @@ impl ToRust for TypeExpr {
     fn to_rust(&self) -> String {
         match self {
             TypeExpr::Name(name) => name.to_owned(),
+            TypeExpr::Tuple(types) => types
+                .iter()
+                .map(|i| i.to_rust())
+                .collect::<Vec<String>>()
+                .join(", "),
             TypeExpr::WithArgs(name, args) => {
                 format!("{name}<{}>", expr_vec_to_rust(args, ", "),)
             }
@@ -502,15 +508,33 @@ impl ASTParser {
     }
 
     fn parse_type_expr(&mut self) -> TypeExpr {
-        let str = self.get_string_token();
+        if self.is_next_token(Token::LeftParen) {
+            let mut items = Vec::new();
 
-        if self.is_next_token(Token::LeftAngleBracket) {
-            let type_args = self.parse_type_args();
+            if self.is_next_token(Token::RightParen) {
+                return TypeExpr::Tuple(items);
+            };
 
-            return TypeExpr::WithArgs(str, type_args);
+            items.push(self.parse_type_expr());
+
+            while !self.is_next_token(Token::RightParen) {
+                self.assert_next_token(Token::Comma);
+
+                items.push(self.parse_type_expr());
+            }
+
+            return TypeExpr::Tuple(items);
         } else {
-            return TypeExpr::Name(str);
-        };
+            let str = self.get_string_token();
+
+            if self.is_next_token(Token::LeftAngleBracket) {
+                let type_args = self.parse_type_args();
+
+                return TypeExpr::WithArgs(str, type_args);
+            } else {
+                return TypeExpr::Name(str);
+            };
+        }
     }
 
     /// Validate is it fn call expression by current token stream. And parse the expression.
@@ -826,8 +850,12 @@ impl ASTParser {
                     let args = self.try_parse_comma_define_exprs(Token::RightParen);
 
                     let type_args = self.parse_type_args();
-                    self.assert_next_token(Token::Colon);
-                    let return_type = self.parse_type_expr();
+
+                    let return_type = if self.is_next_token(Token::Colon) {
+                        self.parse_type_expr()
+                    } else {
+                        TypeExpr::Tuple(Vec::new())
+                    };
 
                     let body = self.parse_codeblock();
 
