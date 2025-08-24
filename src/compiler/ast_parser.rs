@@ -492,56 +492,6 @@ impl ASTParser {
         }
     }
 
-    fn parse_type_expr(&mut self) -> TypeExpr {
-        if self.is_next_token(Token::LeftParen) {
-            let mut items = Vec::new();
-
-            if self.is_next_token(Token::RightParen) {
-                return TypeExpr::Tuple(items);
-            };
-
-            items.push(self.parse_type_expr());
-
-            while !self.is_next_token(Token::RightParen) {
-                self.assert_next_token(Token::Comma);
-
-                items.push(self.parse_type_expr());
-            }
-
-            return TypeExpr::Tuple(items);
-        } else {
-            let str = self.get_string_token();
-
-            if self.is_next_token(Token::LeftAngleBracket) {
-                let type_args = self.parse_comma_type_exprs(Token::RightAngleBracket);
-
-                return TypeExpr::WithArgs(str, type_args);
-            } else {
-                return TypeExpr::Name(str);
-            };
-        }
-    }
-
-    fn parse_variable_define_expr(&mut self) -> VariableDefineExpr {
-        let Some(curr_token) = self.token_stream.next() else {
-            panic!("Expected variable define expression. But file is ended.");
-        };
-
-        if let Token::String(str) = curr_token {
-            if self.is_next_token(Token::Colon) {
-                let type_expr = self.parse_type_expr();
-                return VariableDefineExpr::WithType(str, type_expr);
-            } else {
-                return VariableDefineExpr::Name(str);
-            }
-        } else if curr_token == Token::LeftParen {
-            let items = self.parse_comma_define_exprs(Token::RightParen);
-            return VariableDefineExpr::TupleDestruct(items);
-        } else {
-            panic!("Expected variable define expression. Found '{curr_token}'.");
-        }
-    }
-
     // # PARSE_COMMA_- METHODS #
 
     fn parse_comma_value_exprs(&mut self, end_token: Token) -> Vec<ValueExpr> {
@@ -742,6 +692,56 @@ impl ASTParser {
     }
 
     // # HIGH LEVEL METHODS #
+
+    fn parse_type_expr(&mut self) -> TypeExpr {
+        if self.is_next_token(Token::LeftParen) {
+            let mut items = Vec::new();
+
+            if self.is_next_token(Token::RightParen) {
+                return TypeExpr::Tuple(items);
+            };
+
+            items.push(self.parse_type_expr());
+
+            while !self.is_next_token(Token::RightParen) {
+                self.assert_next_token(Token::Comma);
+
+                items.push(self.parse_type_expr());
+            }
+
+            return TypeExpr::Tuple(items);
+        } else {
+            let str = self.get_string_token();
+
+            if self.is_next_token(Token::LeftAngleBracket) {
+                let type_args = self.parse_comma_type_exprs(Token::RightAngleBracket);
+
+                return TypeExpr::WithArgs(str, type_args);
+            } else {
+                return TypeExpr::Name(str);
+            };
+        }
+    }
+
+    fn parse_variable_define_expr(&mut self) -> VariableDefineExpr {
+        let Some(curr_token) = self.token_stream.next() else {
+            panic!("Expected variable define expression. But file is ended.");
+        };
+
+        if let Token::String(str) = curr_token {
+            if self.is_next_token(Token::Colon) {
+                let type_expr = self.parse_type_expr();
+                return VariableDefineExpr::WithType(str, type_expr);
+            } else {
+                return VariableDefineExpr::Name(str);
+            }
+        } else if curr_token == Token::LeftParen {
+            let items = self.parse_comma_define_exprs(Token::RightParen);
+            return VariableDefineExpr::TupleDestruct(items);
+        } else {
+            panic!("Expected variable define expression. Found '{curr_token}'.");
+        }
+    }
 
     fn parse_value_expr(&mut self) -> ValueExpr {
         let Some(curr_token) = self.token_stream.next() else {
