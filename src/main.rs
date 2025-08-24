@@ -1,3 +1,5 @@
+#![deny(deprecated)]
+
 use clap::*;
 use std::{
     fs::File,

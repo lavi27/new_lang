@@ -478,6 +478,7 @@ impl ASTParser {
     /// When there is no same token, stream does not move to next.
     ///
     /// To high abstraction logic, this method isn't recomended to use.
+    #[must_use]
     fn is_next_token(&mut self, token: Token) -> bool {
         let curr_token = self.token_stream.peek();
 
@@ -573,7 +574,6 @@ impl ASTParser {
         (NamespaceChain(items), last)
     }
 
-    /// Validate is it fn call expression by current token stream. And parse the expression.
     fn try_parse_fn_call(
         &mut self,
         fn_name: String,
@@ -599,7 +599,6 @@ impl ASTParser {
         })
     }
 
-    /// Validate is it macro expression by current token stream. And parse the expression.
     fn try_parse_macro(&mut self, name: String, namespace: NamespaceChain) -> Option<Expr> {
         if !self.is_next_token(Token::Exclamationmark) {
             return None;
@@ -621,10 +620,11 @@ impl ASTParser {
     }
 
     fn try_parse_infix_value_exprs(&mut self, first: ValueExpr) -> Option<ValueExpr> {
+        #[allow(deprecated)]
         self._try_parse_infix_value_exprs_recursive(first, 0)
     }
 
-    /// # DONT CALL THIS.
+    #[deprecated(note = "This function should not be called directly")]
     fn _try_parse_infix_value_exprs_recursive(
         &mut self,
         left_val: ValueExpr,
