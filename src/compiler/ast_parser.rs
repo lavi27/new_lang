@@ -58,7 +58,7 @@ enum Expr {
         args: Vec<VariableDefineExpr>,
         body: CodeBlock,
     },
-    Macro {
+    MacroCall {
         namespace: NamespaceChain,
         name: String,
         args: Vec<ValueExpr>,
@@ -175,6 +175,18 @@ impl ToRust for Expr {
                         body.to_rust()
                     )
                 }
+            }
+            Self::MacroCall {
+                namespace,
+                name,
+                args,
+            } => {
+                format!(
+                    "{}{}!({});",
+                    namespace.to_rust(),
+                    name,
+                    expr_vec_to_rust(args, ", ")
+                )
             }
             Self::Return(expr) => format!("return {};", expr.to_rust()),
         }
@@ -560,7 +572,7 @@ impl ASTParser {
             return None;
         };
 
-        Some(Expr::Macro {
+        Some(Expr::MacroCall {
             namespace,
             name,
             args,
