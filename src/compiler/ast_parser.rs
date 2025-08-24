@@ -447,6 +447,7 @@ impl ASTParser {
     }
 
     // # LOW LEVEL METHODS #
+    // self.token_stream을 직접 조작하는 저수준 매서드.
 
     fn assert_next_token(&mut self, token: Token) {
         let Some(curr_token) = self.token_stream.next() else {
@@ -493,6 +494,7 @@ impl ASTParser {
     }
 
     // # PARSE_COMMA_- METHODS #
+    // 콤마로 나뉜 표현식을 처리하기 위해 특화된 저수준 매서드.
 
     fn parse_comma_value_exprs(&mut self, end_token: Token) -> Vec<ValueExpr> {
         let mut items = Vec::new();
@@ -556,6 +558,8 @@ impl ASTParser {
     }
 
     // # TRY- METHODS #
+    // 조건 검증과 처리를 동시에 수행하는 매서드들, 여러번 호출해도 무방한 것들. 인자 외에는 호출시 조건이 필요 없음.
+    // if let Some(_) = ... 구조로 사용할 것.
 
     fn try_parse_namespace(&mut self, name: String) -> (NamespaceChain, String) {
         let mut items = vec![name];
@@ -692,6 +696,7 @@ impl ASTParser {
     }
 
     // # HIGH LEVEL METHODS #
+    // 사이드이펙트가 최소이며, 언제든 호출해도 기능이 보장되는 매서드들.
 
     fn parse_type_expr(&mut self) -> TypeExpr {
         if self.is_next_token(Token::LeftParen) {
