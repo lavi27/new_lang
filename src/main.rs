@@ -1,11 +1,6 @@
 #![deny(deprecated)]
 
 use clap::*;
-use std::{
-    fs::File,
-    io::{Read, Write},
-    path::Path,
-};
 
 use crate::compiler::CompileOption;
 
@@ -25,6 +20,8 @@ enum Commands {
 
         #[arg(short, long)]
         outdir: String,
+        #[arg(short, long)]
+        transfile: bool,
     },
 }
 
@@ -32,32 +29,14 @@ fn main() {
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::Build { file_path, outdir } => {
-            let input_code = {
-                let mut tmp = String::with_capacity(256);
-                let stdin = File::open(file_path).expect("msg");
-                let mut stdin = std::io::BufReader::new(stdin);
-
-                stdin.read_to_string(&mut tmp);
-                tmp
-            };
-
-            let Ok(output_code) = compiler::Compiler::compile_static(
-                Path::new(file_path)
-                    .file_name()
-                    .expect("msg")
-                    .to_str()
-                    .expect("msg")
-                    .to_string(),
-                input_code,
-                CompileOption::default(),
-            ) else {
-                return;
-            };
-
-            let stdout = File::open(outdir).expect("msg");
-            let mut stdout = std::io::BufWriter::new(stdout);
-            stdout.write_all(output_code.as_bytes());
+        Commands::Build { file_path, outdir, transfile } => {
+            compiler::Compiler::compile_static(
+                file_path.clone(),
+                outdir.clone(),
+                CompileOption {
+                    transfile: transfile.clone(),
+                },
+            );
         }
     }
 }

@@ -22,7 +22,8 @@ macro_rules! newlang_forin {
             $remain_body;
         }
     }
-}";
+}
+";
 
 const RUST_THREADING_BASE: &str = "static mut THREAD_POOL = None;
 
@@ -35,7 +36,8 @@ fn get_thread_pool() {
     }
 
     THREAD_POOL.unwrap()
-}";
+}
+";
 
 pub struct CodeGenerater<'a> {
     ast: &'a AbstractSyntaxTree,

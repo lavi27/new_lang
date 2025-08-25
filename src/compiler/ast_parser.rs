@@ -71,7 +71,10 @@ impl ToRust for Expr {
     fn to_rust(&self) -> String {
         match self {
             Self::CodeBlock(expr) => expr.to_rust() + ";",
-            Self::ValueExpr(expr) => expr.to_rust() + ";",
+            Self::ValueExpr(expr) => {
+                let result = expr.to_rust();
+                result
+            },
             Self::VariableDefineExpr(expr) => expr.to_rust() + ";",
             Self::TypeExpr(expr) => expr.to_rust() + ";",
             Self::NamespaceChain(expr) => expr.to_rust() + ";",
@@ -85,13 +88,13 @@ impl ToRust for Expr {
             } => {
                 if let Some(else_body) = else_body {
                     format!(
-                        "if {} {{ {} }} else {{ {} }};",
+                        "if {} {} else {};",
                         condition.to_rust(),
                         if_body.to_rust(),
                         else_body.to_rust()
                     )
                 } else {
-                    format!("if {} {{ {} }};", condition.to_rust(), if_body.to_rust())
+                    format!("if {} {};", condition.to_rust(), if_body.to_rust())
                 }
             }
             Self::ForIn {
@@ -155,7 +158,7 @@ impl ToRust for Expr {
             } => {
                 if let Some(type_args) = type_args {
                     format!(
-                        "fn {}<{}>({}) -> {} {{ {} }};",
+                        "fn {}<{}>({}) -> {} {}",
                         name,
                         expr_vec_to_rust(type_args, ", "),
                         expr_vec_to_rust(args, ", "),
@@ -164,7 +167,7 @@ impl ToRust for Expr {
                     )
                 } else {
                     format!(
-                        "fn {}({}) -> {} {{ {} }};",
+                        "fn {}({}) -> {} {}",
                         name,
                         expr_vec_to_rust(args, ", "),
                         return_type.to_rust(),
@@ -219,7 +222,7 @@ impl ToRust for ValueExpr {
         match self {
             Self::IntagerLiteral(int) => int.to_string(),
             Self::FloatLiteral(float) => float.to_string(),
-            Self::StringLiteral(str) => str.to_owned(),
+            Self::StringLiteral(str) => format!("\"{}\"", str.to_owned()),
             Self::Add(lvel, rvel) => format!("{}+{}", lvel.to_rust(), rvel.to_rust()),
             Self::Sub(lvel, rvel) => format!("{}-{}", lvel.to_rust(), rvel.to_rust()),
             Self::Mul(lvel, rvel) => format!("{}*{}", lvel.to_rust(), rvel.to_rust()),
@@ -277,6 +280,7 @@ impl ToRust for ValueExpr {
                         expr_vec_to_rust(args, ", ")
                     )
                 } else {
+                    println!("??");
                     format!(
                         "{}.{}({})",
                         object.to_rust(),
@@ -329,13 +333,15 @@ impl ToRust for TypeExpr {
     fn to_rust(&self) -> String {
         match self {
             Self::Name(name) => name.to_owned(),
-            Self::Tuple(types) => types
+            Self::Tuple(types) => {
+                format!("({})", types
                 .iter()
                 .map(|i| i.to_rust())
                 .collect::<Vec<String>>()
-                .join(", "),
+                .join(", "))
+            }
             Self::WithArgs(name, args) => {
-                format!("{name}<{}>", expr_vec_to_rust(args, ", "),)
+                format!("{name}<{}>", expr_vec_to_rust(args, ", "))
             }
         }
     }
@@ -378,14 +384,14 @@ impl ToRust for CodeBlock {
 }
 
 pub struct AbstractSyntaxTree {
-    pub main_routine: CodeBlock,
+    pub main_routine: Vec<Expr>,
     pub is_threading_used: bool,
 }
 
 impl Default for AbstractSyntaxTree {
     fn default() -> Self {
         Self {
-            main_routine: CodeBlock(Vec::new()),
+            main_routine: Vec::new(),
             is_threading_used: false,
         }
     }
@@ -393,7 +399,7 @@ impl Default for AbstractSyntaxTree {
 
 impl ToRust for AbstractSyntaxTree {
     fn to_rust(&self) -> String {
-        self.main_routine.to_rust()
+        expr_vec_to_rust(&self.main_routine, "\n")
     }
 }
 
@@ -440,7 +446,7 @@ impl ASTParser {
                 ));
             };
 
-            self.result.main_routine.0.push(line);
+            self.result.main_routine.push(line);
         }
 
         panic::take_hook();
@@ -508,10 +514,7 @@ impl ASTParser {
         let aaa = self.parse_value_expr();
         items.push(aaa);
 
-        while {
-            let is_end = self.is_next_token(end_token.clone());
-            !is_end
-        } {
+        while !self.is_next_token(end_token.clone()) {
             self.assert_next_token(Token::Comma);
             items.push(self.parse_value_expr());
         }
@@ -808,13 +811,14 @@ impl ASTParser {
             }
         };
 
-        if let Some(chain_expr) = self.try_parse_object_chain(result.clone()) {
-            return chain_expr;
-        } else if let Some(infix_expr) = self.try_parse_infix_value_exprs(result.clone()) {
-            return infix_expr;
-        } else {
-            return result;
-        }
+        result
+        // if let Some(chain_expr) = self.try_parse_object_chain(result.clone()) {
+        //     return chain_expr;
+        // } else if let Some(infix_expr) = self.try_parse_infix_value_exprs(result.clone()) {
+        //     return infix_expr;
+        // } else {
+        //     return result;
+        // }
     }
 
     fn parse_codeline(&mut self) -> Expr {

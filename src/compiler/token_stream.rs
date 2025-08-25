@@ -145,6 +145,8 @@ impl TokenStream {
     pub fn string_before_char(&mut self, char_byte: u8) -> String {
         let token_start = self.offset;
 
+        
+
         while self.offset < self.raw.len() {
             if self.raw[self.offset] == char_byte {
                 self.offset += 1;
@@ -177,15 +179,30 @@ impl Iterator for TokenStream {
                         is_expect_intager = true;
                     }
                 }
-                b'\n' => {
-                    row_start_offset = self.curr_col;
-                    self.curr_col += 1;
-                }
                 b':' if self.raw[self.offset + 1] == b':' => {
                     self.offset += 2;
                     self.curr_row_range.start = token_start - row_start_offset + 1;
                     self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
                     return Some(Token::Namespace);
+                }
+                b'\n' => {
+                    if token_start != self.offset {
+                        let result =
+                            String::from_utf8(self.raw[token_start..self.offset].to_vec()).unwrap();
+                        let result = if is_expect_intager {
+                            Token::Intager(result)
+                        } else {
+                            Token::String(result)
+                        };
+
+                        self.curr_row_range.start = token_start - row_start_offset + 1;
+                        self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
+                        return Some(result);
+                    } else {
+                        row_start_offset = self.curr_col;
+                        self.curr_col += 1;
+                        token_start += 1;
+                    }
                 }
                 b' ' | b'\t' => {
                     if token_start != self.offset {
