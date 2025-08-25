@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    compiler::token_stream::{Token, TokenStream},
+    compiler::{code_generater::{for_in_to_rust, parallel_for_in_to_rust}, token_stream::{Token, TokenStream}},
     s,
 };
 
@@ -16,12 +16,8 @@ fn expr_vec_to_rust(vec: &Vec<impl ToRust>, sep: &str) -> String {
         .join(sep)
 }
 
-pub trait ToRust {
-    fn to_rust(&self) -> String;
-}
-
 #[derive(Clone)]
-enum Expr {
+pub enum Expr {
     EqualAssign {
         variable: ValueExpr,
         value: ValueExpr,
@@ -71,10 +67,7 @@ impl ToRust for Expr {
     fn to_rust(&self) -> String {
         match self {
             Self::CodeBlock(expr) => expr.to_rust() + ";",
-            Self::ValueExpr(expr) => {
-                let result = expr.to_rust();
-                result
-            },
+            Self::ValueExpr(expr) => expr.to_rust() + ";",
             Self::VariableDefineExpr(expr) => expr.to_rust() + ";",
             Self::TypeExpr(expr) => expr.to_rust() + ";",
             Self::NamespaceChain(expr) => expr.to_rust() + ";",
@@ -103,22 +96,7 @@ impl ToRust for Expr {
                 iter_body,
                 remain_body,
             } => {
-                if let Some(remain_body) = remain_body {
-                    format!(
-                        "newlang_forin!(({}), ({}), {}, {});",
-                        iter_item.to_rust(),
-                        iter.to_rust(),
-                        iter_body.to_rust(),
-                        remain_body.to_rust()
-                    )
-                } else {
-                    format!(
-                        "newlang_forin!(({}), ({}), {}, {{}});",
-                        iter_item.to_rust(),
-                        iter.to_rust(),
-                        iter_body.to_rust()
-                    )
-                }
+                for_in_to_rust(iter_item, iter, iter_body, remain_body)
             }
             Self::ParallelForIn {
                 iter_item,
@@ -126,22 +104,7 @@ impl ToRust for Expr {
                 iter_body,
                 remain_body,
             } => {
-                if let Some(remain_body) = remain_body {
-                    format!(
-                        "newlang_parallelforin!({}, {}, {}, {});",
-                        iter_item.to_rust(),
-                        iter.to_rust(),
-                        iter_body.to_rust(),
-                        remain_body.to_rust()
-                    )
-                } else {
-                    format!(
-                        "newlang_parallelforin!({}, {}, {}, {{}});",
-                        iter_item.to_rust(),
-                        iter.to_rust(),
-                        iter_body.to_rust()
-                    )
-                }
+                parallel_for_in_to_rust(iter_item, iter, iter_body, remain_body)
             }
             Self::VariableLet { define_expr, value } => {
                 format!("let {} = {};", define_expr.to_rust(), value.to_rust())
@@ -181,7 +144,7 @@ impl ToRust for Expr {
 }
 
 #[derive(Clone)]
-enum ValueExpr {
+pub enum ValueExpr {
     IntagerLiteral(i64),
     FloatLiteral(f64),
     StringLiteral(String),
@@ -280,7 +243,6 @@ impl ToRust for ValueExpr {
                         expr_vec_to_rust(args, ", ")
                     )
                 } else {
-                    println!("??");
                     format!(
                         "{}.{}({})",
                         object.to_rust(),
@@ -295,7 +257,7 @@ impl ToRust for ValueExpr {
                 args,
             } => {
                 format!(
-                    "{}{}!({});",
+                    "{}{}!({})",
                     namespace.to_rust(),
                     name,
                     expr_vec_to_rust(args, ", ")
@@ -306,7 +268,7 @@ impl ToRust for ValueExpr {
 }
 
 #[derive(Clone)]
-enum VariableDefineExpr {
+pub enum VariableDefineExpr {
     Name(String),
     WithType(String, TypeExpr),
     TupleDestruct(Vec<VariableDefineExpr>),
@@ -323,7 +285,7 @@ impl ToRust for VariableDefineExpr {
 }
 
 #[derive(Clone)]
-enum TypeExpr {
+pub enum TypeExpr {
     Name(String),
     Tuple(Vec<TypeExpr>),
     WithArgs(String, Vec<TypeExpr>),
@@ -348,7 +310,7 @@ impl ToRust for TypeExpr {
 }
 
 #[derive(Clone)]
-struct NamespaceChain(Vec<String>);
+pub struct NamespaceChain(Vec<String>);
 
 impl NamespaceChain {
     fn new() -> Self {
@@ -367,7 +329,7 @@ impl ToRust for NamespaceChain {
 }
 
 #[derive(Clone)]
-struct CodeBlock(Vec<Expr>);
+pub struct CodeBlock(Vec<Expr>);
 
 impl ToRust for CodeBlock {
     fn to_rust(&self) -> String {
@@ -565,7 +527,6 @@ impl ASTParser {
     // # TRY- METHODS #
     // 조건 검증과 처리를 동시에 수행하는 매서드들, 여러번 호출해도 무방한 것들. 인자 외에는 호출시 조건이 필요 없음.
     // if let Some(_) = ... 구조로 사용할 것.
-    // 호출 순서에 민감함!
 
     fn try_parse_namespace(&mut self, name: String) -> (NamespaceChain, String) {
         let mut items = vec![name];
@@ -670,8 +631,7 @@ impl ASTParser {
     }
 
     fn try_parse_object_chain(&mut self, first: ValueExpr) -> Option<ValueExpr> {
-        let mut chain = Vec::new();
-        let mut last_expr = first;
+        let mut chain = vec![first.clone()];
 
         while self.is_next_token(Token::Period) {
             let token = self.get_string_token();
@@ -683,9 +643,9 @@ impl ASTParser {
                 ..
             }) = self.try_parse_fn_call(token.clone(), NamespaceChain::new())
             {
-                ValueExpr::MethodCall {
-                    object: Box::new(last_expr.clone()),
-                    method: name,
+                ValueExpr::FnCall {
+                    namespace: NamespaceChain(Vec::new()),
+                    name,
                     type_args,
                     args,
                 }
@@ -694,10 +654,13 @@ impl ASTParser {
             };
 
             chain.push(expr.clone());
-            last_expr = expr;
         }
 
-        Some(ValueExpr::ObjectChain(chain))
+        if chain.len() > 1 {
+            Some(ValueExpr::ObjectChain(chain))
+        } else {
+            None
+        }
     }
 
     // # HIGH LEVEL METHODS #
@@ -793,7 +756,7 @@ impl ASTParser {
             }
             Token::String(str) => {
                 let (namespace, str) = self.try_parse_namespace(str.clone());
-
+                
                 if let Some(macro_expr) = self.try_parse_macro(str.clone(), namespace.clone()) {
                     macro_expr
                 } else if let Some(fn_expr) = self.try_parse_fn_call(str.clone(), namespace) {
@@ -888,8 +851,9 @@ impl ASTParser {
                 "let" => {
                     self.token_stream.next();
                     let define_expr = self.parse_variable_define_expr();
+                    
                     self.assert_next_token(Token::Equal);
-
+                    
                     let value = self.parse_value_expr();
                     self.assert_next_token(Token::Semicolon);
 

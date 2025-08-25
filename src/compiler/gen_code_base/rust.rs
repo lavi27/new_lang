@@ -1,53 +1,78 @@
-pub const BASE: &str = "use std::cmp;
+pub const BASE: &str = "";
 
-macro_rules! newlang_forin {
-    (($( $iter_item:expr ), +), ($( $iter:expr ), +), $iter_body:block, $remain_body:block) => {
-        let shortest_len = ziped_iters.len();
-        let longest_len = [($($iter.len()), +)].into_iter().max();
+pub const THREADING_BASE: &str = "use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
+use std::sync::OnceLock;
 
+static THREAD_POOL: OnceLock<ThreadPool> = OnceLock::new();
 
-        for _ in 0..shortest_len {
-            let (($($iter_item), +)) = (($($iter.next().unwrap()), +));
-            $iter_body;
-        }
+fn get_thread_pool() -> &'static ThreadPool {
+    THREAD_POOL.get_or_init(|| ThreadPool::new(4))
+}
 
+type Job = Box<dyn FnOnce() + Send + 'static>;
 
-        for _ in shortest_len..longest_len {
-            let (($($iter_item), +)) = (($($iter.next()), +));
-            $remain_body;
+struct Worker {
+    handle: Option<thread::JoinHandle<()>>,
+}
+
+impl Worker {
+    fn new(receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+        let handle = thread::spawn(move || loop {
+            let job = {
+                let lock = receiver.lock().unwrap();
+                lock.recv()
+            };
+
+            if let Ok(job) = job {
+                job();
+            } else {
+                break;
+            }
+        });
+
+        Worker {
+            handle: Some(handle),
         }
     }
 }
-";
 
-pub const THREADING_BASE: &str = "static mut THREAD_POOL = None;
-
-fn get_thread_pool() {
-    if THREAD_POOL.is_none() {
-        let mut result = Vec::with_capacity(std::thread::available_parallelism().unwarp());
-        result.push()
-
-        THREAD_POOL = Some(result);
-    }
-
-    THREAD_POOL.unwrap()
+pub struct ThreadPool {
+    workers: Vec<Worker>,
+    sender: mpsc::Sender<Job>,
+    pub size: usize,
 }
 
-macro_rules! newlang_parallelforin {
-    (($( $iter_item:expr ), +), ($( $iter:expr ), +), $iter_body:block, $remain_body:block) => {
-        let shortest_len = ziped_iters.len();
-        let longest_len = [($($iter.len()), +)].into_iter().max();
+impl ThreadPool {
+    pub fn new(size: usize) -> ThreadPool {
+        assert!(size > 0);
 
+        let (sender, receiver) = mpsc::channel();
+        let receiver = Arc::new(Mutex::new(receiver));
 
-        for _ in 0..shortest_len {
-            let (($($iter_item), +)) = (($($iter.next().unwrap()), +));
-            $iter_body;
+        let mut workers = Vec::with_capacity(size);
+        for _ in 0..size {
+            workers.push(Worker::new(Arc::clone(&receiver)));
         }
 
+        ThreadPool { workers, sender, size }
+    }
 
-        for _ in shortest_len..longest_len {
-            let (($($iter_item), +)) = (($($iter.next()), +));
-            $remain_body;
+    pub fn execute<F>(&self, f: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        self.sender.send(Box::new(f)).unwrap();
+    }
+}
+
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        drop(&self.sender);
+        for worker in &mut self.workers {
+            if let Some(handle) = worker.handle.take() {
+                handle.join().unwrap();
+            }
         }
     }
 }

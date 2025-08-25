@@ -1,3 +1,10 @@
 fn main() {
+  var vec = Vec::new();
+  vec.push(12);
+
+  for (i) in (vec) {
+    print!("a");
+  }
+
   print!("hello"); 
 }
