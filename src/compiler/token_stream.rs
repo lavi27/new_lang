@@ -190,7 +190,7 @@ impl Iterator for TokenStream {
                         self.curr_row_range.start = token_start - row_start_offset + 1;
                         self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
                         return Some(result);
-                    } else { 
+                    } else {
                         self.offset += 2;
                         self.curr_row_range.start = token_start - row_start_offset + 1;
                         self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
@@ -216,7 +216,7 @@ impl Iterator for TokenStream {
                         token_start += 1;
                     }
                 }
-                b' ' | b'\t' => {
+                b' ' | b'\t' | b'\r' => {
                     if token_start != self.offset {
                         let result =
                             String::from_utf8(self.raw[token_start..self.offset].to_vec()).unwrap();
