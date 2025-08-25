@@ -866,7 +866,24 @@ impl ASTParser {
                 "parallelFor" => {
                     self.token_stream.next();
                     self.result.is_threading_used = true;
-                    todo!()
+                    
+                    let iter_item = self.parse_variable_define_expr();
+
+                    self.assert_next_token(Token::String(s!("in")));
+
+                    let iter = self.parse_value_expr();
+                    let iter_body = self.parse_codeblock();
+
+                    let remain_body = self
+                        .is_next_token(Token::String(s!("remain")))
+                        .then(|| self.parse_codeblock());
+
+                    Expr::ParallelForIn {
+                        iter_item,
+                        iter,
+                        iter_body,
+                        remain_body,
+                    }
                 }
                 "let" => {
                     self.token_stream.next();
