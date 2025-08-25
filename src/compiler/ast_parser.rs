@@ -5,10 +5,7 @@ use std::{
 };
 
 use crate::{
-    compiler::{
-        code_generater::{for_in_to_rust, parallel_for_in_to_rust},
-        token_stream::{Token, TokenStream},
-    },
+    compiler::token_stream::{Token, TokenStream},
     s,
 };
 

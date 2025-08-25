@@ -271,10 +271,9 @@ impl ToRust for AbstractSyntaxTree {
     }
 }
 
-macro_rules! putln {
+macro_rules! put {
     ($target:expr, $($items:expr),+) => {
         $target.push_str(&format!($($items),+));
-        $target.push('\n');
     };
 }
 
@@ -291,19 +290,28 @@ pub fn parallel_for_in_to_rust(
             panic!("");
         };
 
-        putln!(res, "let __thr_pool = get_thread_pool();");
-        putln!(res, "let __iter = {};", var);
-        putln!(res, "let __iter_chunks: Vec<Vec<_>> = __iter.chunks(__thr_pool.size).map(|c| c.to_vec()).collect();");
+        put!(res, "{{\n");
+        {
+            put!(res, "let __thr_pool = get_thread_pool();\n");
+            put!(res, "let mut __iters = {};\n", var);
+            put!(res, "let __iter_chunks: Vec<Vec<_>> = __iters.chunks(__thr_pool.size).map(|c| c.to_vec()).collect();\n");
 
-        putln!(res, "for __chunk in __iter_chunks {{");
-        putln!(res, "__thr_pool.execute(move || {{");
-
-        putln!(res, "for {} in __chunk {{", iter_item);
-        putln!(res, "{}", iter_body.to_rust());
-        putln!(res, "}};");
-
-        putln!(res, "}});");
-        putln!(res, "}};");
+            put!(res, "for __chunk in __iter_chunks {{\n");
+            {
+                put!(res, "__thr_pool.execute(move || {{\n");
+                {
+                    put!(
+                        res,
+                        "for {} in __chunk {}\n",
+                        iter_item,
+                        iter_body.to_rust()
+                    );
+                }
+                put!(res, "}});\n");
+            }
+            put!(res, "}};\n");
+        }
+        put!(res, "}}\n");
     } else {
         panic!("");
     };
@@ -324,46 +332,66 @@ pub fn for_in_to_rust(
             panic!("");
         };
 
-        putln!(res, "for {} in {} {}", iter_item, var, iter_body.to_rust());
+        put!(
+            res,
+            "for {} in {} {}\n",
+            iter_item,
+            var,
+            iter_body.to_rust()
+        );
     } else if let ValueExpr::Tuple(iters) = iter {
         let VariableDefineExpr::TupleDestruct(iter_items) = iter_item else {
             panic!("");
         };
 
-        putln!(
-            res,
-            "let __iters = [{}];",
-            iters
-                .iter()
-                .map(|i| i.to_rust())
-                .collect::<Vec<String>>()
-                .join(", ")
-        );
-        putln!(res, "loop {{");
-        for (idx, item) in iter_items.iter().enumerate() {
-            putln!(
+        put!(res, "{{\n");
+        {
+            put!(
                 res,
-                "let Some({}) = __iters[{}].next() else {{break}};",
-                item.to_rust(),
-                idx
+                "let mut __iters = [{}];\n",
+                iters
+                    .iter()
+                    .map(|i| i.to_rust())
+                    .collect::<Vec<String>>()
+                    .join(", ")
             );
-        }
-        putln!(res, "{}", iter_body.to_rust());
-        putln!(res, "}}");
 
-        let Some(remain_body) = remain_body else {
-            return res;
-        };
+            let mut while_let_item = Vec::new();
+            let mut while_let_iter = Vec::new();
+            for (idx, item) in iter_items.iter().enumerate() {
+                while_let_item.push(format!("Some({})", item.to_rust()));
+                while_let_iter.push(format!("__iters[{}].next()", idx));
+            }
+            let while_let_item = while_let_item.join(", ");
+            let while_let_iter = while_let_iter.join(", ");
 
-        putln!(res, "loop {{");
-        putln!(res, "let mut __none_cnt = 0usize;");
-        for (idx, item) in iter_items.iter().enumerate() {
-            putln!(res, "let {} = __iters[{}].next();", item.to_rust(), idx);
-            putln!(res, "if {}.is_none() {{__none_cnt += 1}};", item.to_rust());
+            put!(
+                res,
+                "while let ({}) = ({}) {}\n",
+                while_let_item,
+                while_let_iter,
+                iter_body.to_rust()
+            );
+
+            if let Some(remain_body) = remain_body {
+                put!(res, "loop {{\n");
+                {
+                    let mut end_cond = Vec::new();
+
+                    for (idx, item) in iter_items.iter().enumerate() {
+                        put!(res, "let {} = __iters[{}].next();\n", item.to_rust(), idx);
+                        end_cond.push(format!("{}.is_none()", item.to_rust()));
+                    }
+
+                    let end_cond = end_cond.join("&&");
+
+                    put!(res, "if {} {{break}};\n", end_cond);
+                    put!(res, "{}\n", remain_body.to_rust());
+                }
+                put!(res, "}}\n");
+            }
         }
-        putln!(res, "if __none_cnt == {} {{break}};", iter_items.len());
-        putln!(res, "{}", remain_body.to_rust());
-        putln!(res, "}}");
+        put!(res, "}}\n");
     } else {
         panic!("");
     };
