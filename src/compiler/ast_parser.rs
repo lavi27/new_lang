@@ -5,16 +5,12 @@ use std::{
 };
 
 use crate::{
-    compiler::{code_generater::{for_in_to_rust, parallel_for_in_to_rust}, token_stream::{Token, TokenStream}},
+    compiler::{
+        code_generater::{for_in_to_rust, parallel_for_in_to_rust},
+        token_stream::{Token, TokenStream},
+    },
     s,
 };
-
-fn expr_vec_to_rust(vec: &Vec<impl ToRust>, sep: &str) -> String {
-    vec.iter()
-        .map(|i| i.to_rust())
-        .collect::<Vec<String>>()
-        .join(sep)
-}
 
 #[derive(Clone)]
 pub enum Expr {
@@ -63,86 +59,6 @@ pub enum Expr {
     NamespaceChain(NamespaceChain),
 }
 
-impl ToRust for Expr {
-    fn to_rust(&self) -> String {
-        match self {
-            Self::CodeBlock(expr) => expr.to_rust() + ";",
-            Self::ValueExpr(expr) => expr.to_rust() + ";",
-            Self::VariableDefineExpr(expr) => expr.to_rust() + ";",
-            Self::TypeExpr(expr) => expr.to_rust() + ";",
-            Self::NamespaceChain(expr) => expr.to_rust() + ";",
-            Self::EqualAssign { variable, value } => {
-                format!("{} = {};", variable.to_rust(), value.to_rust())
-            }
-            Self::If {
-                condition,
-                if_body,
-                else_body,
-            } => {
-                if let Some(else_body) = else_body {
-                    format!(
-                        "if {} {} else {};",
-                        condition.to_rust(),
-                        if_body.to_rust(),
-                        else_body.to_rust()
-                    )
-                } else {
-                    format!("if {} {};", condition.to_rust(), if_body.to_rust())
-                }
-            }
-            Self::ForIn {
-                iter_item,
-                iter,
-                iter_body,
-                remain_body,
-            } => {
-                for_in_to_rust(iter_item, iter, iter_body, remain_body)
-            }
-            Self::ParallelForIn {
-                iter_item,
-                iter,
-                iter_body,
-                remain_body,
-            } => {
-                parallel_for_in_to_rust(iter_item, iter, iter_body, remain_body)
-            }
-            Self::VariableLet { define_expr, value } => {
-                format!("let {} = {};", define_expr.to_rust(), value.to_rust())
-            }
-            Self::VariableVar { define_expr, value } => {
-                format!("let mut {} = {};", define_expr.to_rust(), value.to_rust())
-            }
-            Self::FnDefine {
-                name,
-                type_args,
-                args,
-                return_type,
-                body,
-            } => {
-                if let Some(type_args) = type_args {
-                    format!(
-                        "fn {}<{}>({}) -> {} {}",
-                        name,
-                        expr_vec_to_rust(type_args, ", "),
-                        expr_vec_to_rust(args, ", "),
-                        return_type.to_rust(),
-                        body.to_rust()
-                    )
-                } else {
-                    format!(
-                        "fn {}({}) -> {} {}",
-                        name,
-                        expr_vec_to_rust(args, ", "),
-                        return_type.to_rust(),
-                        body.to_rust()
-                    )
-                }
-            }
-            Self::Return(expr) => format!("return {};", expr.to_rust()),
-        }
-    }
-}
-
 #[derive(Clone)]
 pub enum ValueExpr {
     IntagerLiteral(i64),
@@ -180,108 +96,11 @@ pub enum ValueExpr {
     },
 }
 
-impl ToRust for ValueExpr {
-    fn to_rust(&self) -> String {
-        match self {
-            Self::IntagerLiteral(int) => int.to_string(),
-            Self::FloatLiteral(float) => float.to_string(),
-            Self::StringLiteral(str) => format!("\"{}\"", str.to_owned()),
-            Self::Add(lvel, rvel) => format!("{}+{}", lvel.to_rust(), rvel.to_rust()),
-            Self::Sub(lvel, rvel) => format!("{}-{}", lvel.to_rust(), rvel.to_rust()),
-            Self::Mul(lvel, rvel) => format!("{}*{}", lvel.to_rust(), rvel.to_rust()),
-            Self::Div(lvel, rvel) => format!("{}/{}", lvel.to_rust(), rvel.to_rust()),
-            Self::LessThan(lvel, rvel) => format!("{}<{}", lvel.to_rust(), rvel.to_rust()),
-            Self::GreaterThan(lvel, rvel) => format!("{}>{}", lvel.to_rust(), rvel.to_rust()),
-            Self::Tuple(exprs) => format!("({})", expr_vec_to_rust(exprs, ", ")),
-            Self::Variable(var) => var.to_string(),
-            Self::FnCall {
-                namespace,
-                name,
-                type_args,
-                args,
-            } => {
-                let mut namespace_prefix = namespace.to_rust();
-
-                if !namespace_prefix.is_empty() {
-                    namespace_prefix += "::";
-                }
-
-                if let Some(type_args) = type_args {
-                    format!(
-                        "{}{}<{}>({})",
-                        namespace_prefix,
-                        name,
-                        expr_vec_to_rust(type_args, ", "),
-                        expr_vec_to_rust(args, ", "),
-                    )
-                } else {
-                    format!(
-                        "{}{}({})",
-                        namespace_prefix,
-                        name,
-                        expr_vec_to_rust(args, ", "),
-                    )
-                }
-            }
-            Self::ObjectChain(value_exprs) => expr_vec_to_rust(value_exprs, "."),
-            Self::ObjectField { objcet, field } => {
-                format!("{}.{}", objcet.to_rust(), field.to_owned())
-            }
-
-            Self::MethodCall {
-                object,
-                method,
-                type_args,
-                args,
-            } => {
-                if let Some(type_args) = type_args {
-                    format!(
-                        "{}.{}<{}>({})",
-                        object.to_rust(),
-                        method,
-                        expr_vec_to_rust(type_args, ", "),
-                        expr_vec_to_rust(args, ", ")
-                    )
-                } else {
-                    format!(
-                        "{}.{}({})",
-                        object.to_rust(),
-                        method,
-                        expr_vec_to_rust(args, ", ")
-                    )
-                }
-            }
-            Self::MacroCall {
-                namespace,
-                name,
-                args,
-            } => {
-                format!(
-                    "{}{}!({})",
-                    namespace.to_rust(),
-                    name,
-                    expr_vec_to_rust(args, ", ")
-                )
-            }
-        }
-    }
-}
-
 #[derive(Clone)]
 pub enum VariableDefineExpr {
     Name(String),
     WithType(String, TypeExpr),
     TupleDestruct(Vec<VariableDefineExpr>),
-}
-
-impl ToRust for VariableDefineExpr {
-    fn to_rust(&self) -> String {
-        match self {
-            Self::Name(name) => name.to_owned(),
-            Self::WithType(name, type_) => format!("{name}: {}", type_.to_rust()),
-            Self::TupleDestruct(items) => expr_vec_to_rust(items, ", "),
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -291,26 +110,8 @@ pub enum TypeExpr {
     WithArgs(String, Vec<TypeExpr>),
 }
 
-impl ToRust for TypeExpr {
-    fn to_rust(&self) -> String {
-        match self {
-            Self::Name(name) => name.to_owned(),
-            Self::Tuple(types) => {
-                format!("({})", types
-                .iter()
-                .map(|i| i.to_rust())
-                .collect::<Vec<String>>()
-                .join(", "))
-            }
-            Self::WithArgs(name, args) => {
-                format!("{name}<{}>", expr_vec_to_rust(args, ", "))
-            }
-        }
-    }
-}
-
 #[derive(Clone)]
-pub struct NamespaceChain(Vec<String>);
+pub struct NamespaceChain(pub Vec<String>);
 
 impl NamespaceChain {
     fn new() -> Self {
@@ -318,32 +119,8 @@ impl NamespaceChain {
     }
 }
 
-impl ToRust for NamespaceChain {
-    fn to_rust(&self) -> String {
-        self.0
-            .iter()
-            .map(|i| i.clone())
-            .collect::<Vec<String>>()
-            .join("::")
-    }
-}
-
 #[derive(Clone)]
-pub struct CodeBlock(Vec<Expr>);
-
-impl ToRust for CodeBlock {
-    fn to_rust(&self) -> String {
-        let mut result = s!("{\n");
-
-        for line in self.0.iter() {
-            result.push_str(&line.to_rust());
-            result.push('\n');
-        }
-
-        result.push('}');
-        result
-    }
-}
+pub struct CodeBlock(pub Vec<Expr>);
 
 pub struct AbstractSyntaxTree {
     pub main_routine: Vec<Expr>,
@@ -356,12 +133,6 @@ impl Default for AbstractSyntaxTree {
             main_routine: Vec::new(),
             is_threading_used: false,
         }
-    }
-}
-
-impl ToRust for AbstractSyntaxTree {
-    fn to_rust(&self) -> String {
-        expr_vec_to_rust(&self.main_routine, "\n")
     }
 }
 
@@ -756,7 +527,7 @@ impl ASTParser {
             }
             Token::String(str) => {
                 let (namespace, str) = self.try_parse_namespace(str.clone());
-                
+
                 if let Some(macro_expr) = self.try_parse_macro(str.clone(), namespace.clone()) {
                     macro_expr
                 } else if let Some(fn_expr) = self.try_parse_fn_call(str.clone(), namespace) {
@@ -829,7 +600,7 @@ impl ASTParser {
                 "parallelFor" => {
                     self.token_stream.next();
                     self.result.is_threading_used = true;
-                    
+
                     let iter_item = self.parse_variable_define_expr();
 
                     self.assert_next_token(Token::String(s!("in")));
@@ -851,9 +622,9 @@ impl ASTParser {
                 "let" => {
                     self.token_stream.next();
                     let define_expr = self.parse_variable_define_expr();
-                    
+
                     self.assert_next_token(Token::Equal);
-                    
+
                     let value = self.parse_value_expr();
                     self.assert_next_token(Token::Semicolon);
 
