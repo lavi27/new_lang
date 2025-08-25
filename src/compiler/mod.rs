@@ -3,6 +3,7 @@ mod code_generater;
 mod token_stream;
 #[macro_use]
 mod utils;
+mod gen_code_base;
 
 use std::mem::take;
 use std::process::Command;
