@@ -1,5 +1,7 @@
+mod base_rust;
+
 use crate::{
-    compiler::{ast_parser::*, gen_code_base, CompileOption},
+    compiler::{ast_parser::*, CompileOption, exprs::*},
     s,
 };
 
@@ -24,10 +26,10 @@ impl<'a> CodeGenerater<'a> {
     }
 
     pub fn generate_rust(&mut self) -> String {
-        let mut result = gen_code_base::rust::BASE.to_string();
+        let mut result = base_rust::BASE.to_string();
 
         if self.ast.is_threading_used {
-            result += gen_code_base::rust::THREADING_BASE;
+            result += base_rust::THREADING_BASE;
         }
 
         result += self.ast.to_rust().as_str();
