@@ -5,7 +5,7 @@ pub const THREADING_BASE: &str = "use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::sync::OnceLock;
 
-pub static THREAD_POOL: OnceLock<ThreadPool> = OnceLock::new();
+static THREAD_POOL: OnceLock<ThreadPool> = OnceLock::new();
 
 pub fn get_thread_pool() -> &'static ThreadPool {
     THREAD_POOL.get_or_init(|| ThreadPool::new(4))
