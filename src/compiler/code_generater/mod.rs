@@ -1,14 +1,31 @@
 mod base_rust;
 
+use std::sync::LazyLock;
+use std::{hash::{BuildHasher, Hasher}};
+
+use rustc_hash::{FxBuildHasher, FxHasher};
+
 use crate::{
-    compiler::{ast_parser::*, CompileOption, exprs::*},
+    compiler::{ast_parser::*, exprs::*, CompileOption},
     s,
 };
+
+static mut skill_issue: LazyLock<FxHasher> = LazyLock::new(|| FxBuildHasher::default().build_hasher());
+
+pub fn get_static_var_hash(name: &str) -> String {
+    unsafe {
+    skill_issue.write(name.as_bytes());
+    let hash = skill_issue.finish();
+    
+    format!("_{}_{:016x}", name, hash)
+    }
+}
 
 pub struct CodeGenerater<'a> {
     ast: &'a AbstractSyntaxTree,
     option: CompileOption,
     result: String,
+    // static_var_hasher: FxHasher,
 }
 
 impl<'a> CodeGenerater<'a> {
@@ -22,16 +39,30 @@ impl<'a> CodeGenerater<'a> {
             ast,
             option,
             result: String::new(),
+            // static_var_hasher: FxBuildHasher::default().build_hasher(),
         }
     }
 
-    pub fn generate_rust(&mut self) -> String {
-        let mut result = base_rust::BASE.to_string();
+    // fn get_static_var_hash(&mut self, name: String) -> String {
+    //     self.static_var_hasher.write(name.as_str().as_bytes());
+    //     let hash = self.static_var_hasher.finish();
+        
+    //     format!("{:016x}", hash)
+    // }
 
+    pub fn generate_base(&self) -> String {
+        let mut result = s!("");
+        
         if self.ast.is_threading_used {
             result += base_rust::THREADING_BASE;
         }
 
+        result
+    }
+
+    pub fn generate_rust(&self) -> String {
+        let mut result = format!("mod _newlang_base;\n");
+        
         result += self.ast.to_rust().as_str();
 
         result
@@ -287,24 +318,30 @@ pub fn parallel_for_in_to_rust(
 ) -> String {
     let mut res = String::with_capacity(128);
 
-    if let ValueExpr::Variable(var) = iter {
+    if let ValueExpr::Tuple(items) = iter {
+        todo!();
+    } else {
         let VariableDefineExpr::Name(iter_item) = iter_item else {
             panic!("");
         };
 
         put!(res, "{{\n");
         {
-            put!(res, "let __thr_pool = get_thread_pool();\n");
-            put!(res, "let mut __iters = {};\n", var);
-            put!(res, "let __iter_chunks: Vec<Vec<_>> = __iters.chunks(__thr_pool.size).map(|c| c.to_vec()).collect();\n");
+            let var_thr_pool = get_static_var_hash("thr_pool");
+            put!(res, "let {var_thr_pool} = _newlang_base::get_thread_pool();\n");
+            let var_iters = get_static_var_hash("iters");
+            put!(res, "let mut {var_iters} = {};\n", iter.to_rust());
+            let var_iter_chunks = get_static_var_hash("iter_chunks");
+            put!(res, "let {var_iter_chunks}: Vec<Vec<_>> = {var_iters}.chunks({var_thr_pool}.size).map(|c| c.to_vec()).collect();\n");
 
-            put!(res, "for __chunk in __iter_chunks {{\n");
+            let var_chunk = get_static_var_hash("chunk");
+            put!(res, "for {var_chunk} in {var_iter_chunks} {{\n");
             {
-                put!(res, "__thr_pool.execute(move || {{\n");
+                put!(res, "{var_thr_pool}.execute(move || {{\n");
                 {
                     put!(
                         res,
-                        "for {} in __chunk {}\n",
+                        "for {} in {var_chunk} {}\n",
                         iter_item,
                         iter_body.to_rust()
                     );
@@ -314,8 +351,6 @@ pub fn parallel_for_in_to_rust(
             put!(res, "}};\n");
         }
         put!(res, "}}\n");
-    } else {
-        panic!("");
     };
 
     res
@@ -329,28 +364,17 @@ pub fn for_in_to_rust(
 ) -> String {
     let mut res = String::with_capacity(128);
 
-    if let ValueExpr::Variable(var) = iter {
-        let VariableDefineExpr::Name(iter_item) = iter_item else {
-            panic!("");
-        };
-
-        put!(
-            res,
-            "for {} in {} {}\n",
-            iter_item,
-            var,
-            iter_body.to_rust()
-        );
-    } else if let ValueExpr::Tuple(iters) = iter {
+    if let ValueExpr::Tuple(iters) = iter {
         let VariableDefineExpr::TupleDestruct(iter_items) = iter_item else {
             panic!("");
         };
 
         put!(res, "{{\n");
         {
+            let var_iters = get_static_var_hash("iters");
             put!(
                 res,
-                "let mut __iters = [{}];\n",
+                "let mut {var_iters} = [{}];\n",
                 iters
                     .iter()
                     .map(|i| i.to_rust())
@@ -362,7 +386,7 @@ pub fn for_in_to_rust(
             let mut while_let_iter = Vec::new();
             for (idx, item) in iter_items.iter().enumerate() {
                 while_let_item.push(format!("Some({})", item.to_rust()));
-                while_let_iter.push(format!("__iters[{}].next()", idx));
+                while_let_iter.push(format!("{var_iters}[{}].next()", idx));
             }
             let while_let_item = while_let_item.join(", ");
             let while_let_iter = while_let_iter.join(", ");
@@ -381,7 +405,7 @@ pub fn for_in_to_rust(
                     let mut end_cond = Vec::new();
 
                     for (idx, item) in iter_items.iter().enumerate() {
-                        put!(res, "let {} = __iters[{}].next();\n", item.to_rust(), idx);
+                        put!(res, "let {} = {var_iters}[{}].next();\n", item.to_rust(), idx);
                         end_cond.push(format!("{}.is_none()", item.to_rust()));
                     }
 
@@ -395,7 +419,17 @@ pub fn for_in_to_rust(
         }
         put!(res, "}}\n");
     } else {
-        panic!("");
+        let VariableDefineExpr::Name(iter_item) = iter_item else {
+            panic!("");
+        };
+
+        put!(
+            res,
+            "for {} in {} {}\n",
+            iter_item,
+            iter.to_rust(),
+            iter_body.to_rust()
+        );
     };
 
     res

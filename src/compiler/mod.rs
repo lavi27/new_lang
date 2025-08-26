@@ -67,8 +67,7 @@ impl Compiler {
             .expect("msg")
             .to_string();
 
-        let output_code = self.compile_code(input_code, filename).unwrap();
-
+        let (output_code, base_code) = self.compile_code(input_code, filename).unwrap();
 
         create_dir(self.outdir.clone());
 
@@ -78,6 +77,10 @@ impl Compiler {
             .arg("--bin")
             .status()
             .expect("Error during cargo build.");
+
+        let stdout = File::create(format!("{}/src/_newlang_base.rs", self.outdir.clone())).expect("msg");
+        let mut stdout = std::io::BufWriter::new(stdout);
+        stdout.write_all(base_code.as_bytes());
 
         let stdout = File::create(self.outdir.clone() + "/src/main.rs").expect("msg");
         let mut stdout = std::io::BufWriter::new(stdout);
@@ -95,7 +98,7 @@ impl Compiler {
         Ok(())
     }
 
-    fn compile_code(&mut self, mut input_code: String, filename: String) -> Result<String, ()> {
+    fn compile_code(&mut self, mut input_code: String, filename: String) -> Result<(String, String), ()> {
         let ast = ASTParser::parse_static(
             filename.clone(),
             take(&mut input_code)
@@ -106,6 +109,11 @@ impl Compiler {
             return Err(());
         };
 
-        Ok(CodeGenerater::generate_static(&ast, self.option.clone()))
+        let codegen = CodeGenerater::new(&ast, self.option);
+
+        Ok((
+            codegen.generate_rust(),
+            codegen.generate_base()
+        ))
     }
 }

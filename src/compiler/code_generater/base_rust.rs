@@ -1,4 +1,5 @@
-pub const BASE: &str = "";
+pub const BASE: &str = "mod {newlang_base}
+";
 
 pub const THREADING_BASE: &str = "use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
