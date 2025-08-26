@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::{
-    compiler::exprs::*, s
+    compiler::{code_generater::ToRust, exprs::*}, s
 };
 
 use token_stream::*;
@@ -256,10 +256,11 @@ impl ASTParser {
         left_val: ValueExpr,
         min_priority: usize,
     ) -> Option<ValueExpr> {
-        let mut result = Some(left_val.clone());
+        let mut result = None;
 
         loop {
-            let Some(infix_token) = self.token_stream.next() else {
+            // .expect() 단축 가능
+            let Some(infix_token) = self.token_stream.peek() else {
                 break;
             };
             let priority = match infix_token {
@@ -267,6 +268,7 @@ impl ASTParser {
                 Token::Asterisk | Token::Slash => 2,
                 _ => break,
             };
+            self.token_stream.next();
 
             if priority < min_priority {
                 break;
@@ -421,6 +423,8 @@ impl ASTParser {
                 if let Some(macro_expr) = self.try_parse_macro(str.clone(), namespace.clone()) {
                     macro_expr
                 } else if let Some(fn_expr) = self.try_parse_fn_call(str.clone(), namespace) {
+                    
+            println!("{}", self.token_stream.peek().unwrap());
                     fn_expr
                 } else if let Some(chain_expr) =
                     self.try_parse_object_chain(ValueExpr::Variable(str.clone()))
@@ -440,6 +444,8 @@ impl ASTParser {
         } else if let Some(infix_expr) = self.try_parse_infix_value_exprs(result.clone()) {
             return infix_expr;
         } else {
+
+            println!("{}", self.token_stream.peek().unwrap());
             return result;
         }
     }
@@ -565,10 +571,18 @@ impl ASTParser {
                     Expr::Return(value)
                 }
                 _ => {
-                    let result = Expr::ValueExpr(self.parse_value_expr());
-                    self.assert_next_token(Token::Semicolon);
+                    let result = self.parse_value_expr();
 
-                    result
+                    // 이 로직도 최적화 필요하긴 함
+                    if self.is_next_token(Token::Semicolon) {
+                        return Expr::ValueExpr(result);
+                    } else if self.is_next_token(Token::Equal) {
+                        let value = self.parse_value_expr();
+
+                        return Expr::EqualAssign { variable: result, value };
+                    } else {
+                        panic!();
+                    }
                 }
             },
             Token::Semicolon => {

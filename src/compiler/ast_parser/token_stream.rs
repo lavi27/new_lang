@@ -1,4 +1,4 @@
-use std::{fmt, ops::Range};
+use std::{collections::VecDeque, fmt, ops::Range};
 
 use crate::s;
 
@@ -122,6 +122,7 @@ pub struct TokenStream {
     offset: usize,
     curr_col: usize,
     curr_row_range: Range<usize>,
+    peek_cache: VecDeque<(Token, usize)>,
 }
 
 impl TokenStream {
@@ -131,13 +132,39 @@ impl TokenStream {
             offset: 0,
             curr_col: 1,
             curr_row_range: Range { start: 1, end: 1 },
+            peek_cache: VecDeque::with_capacity(8),
         }
     }
 
     pub fn peek(&mut self) -> Option<Token> {
+        self.peek_nth(0)
+    }
+
+    pub fn peek_nth(&mut self, n: usize) -> Option<Token> {
         let prev_offest = self.offset;
+        let prev_col = self.curr_col;
+        let prev_row_range = self.curr_row_range.clone();
+
+        for _ in 0..n {
+            let Some(res) = self.next() else {
+                self.offset = prev_offest;
+                self.curr_col = prev_col;
+                self.curr_row_range = prev_row_range;
+
+                return None;
+            };
+            
+            self.peek_cache.push_front((res, self.offset));
+        }
+
         let res = self.next();
+        if let Some(result) = res.clone() {
+            self.peek_cache.push_front((result, self.offset));
+        }
+
         self.offset = prev_offest;
+        self.curr_col = prev_col;
+        self.curr_row_range = prev_row_range;
 
         res
     }
@@ -160,18 +187,15 @@ impl TokenStream {
     pub fn get_curr_position(&self) -> (usize, Range<usize>) {
         (self.curr_col, self.curr_row_range.clone())
     }
-}
 
-impl Iterator for TokenStream {
-    type Item = Token;
-
-    fn next(&mut self) -> Option<Self::Item> {
+    fn next_inner(&mut self) -> Option<Token> {
         let mut token_start = self.offset;
         let mut row_start_offset = self.offset;
         let mut is_expect_intager = false;
 
         while self.offset < self.raw.len() {
             // refactor it
+            // 길이 1 초과인 심볼 대응하기
 
             match self.raw[self.offset] {
                 b'0'..=b'9' => {
@@ -271,5 +295,19 @@ impl Iterator for TokenStream {
         }
 
         None
+    }
+}
+
+impl Iterator for TokenStream {
+    type Item = Token;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some((token, offset)) = self.peek_cache.pop_back() {
+            println!("cache {}", token);
+            self.offset = offset;
+            return Some(token)
+        };
+
+        self.next_inner()
     }
 }
