@@ -171,6 +171,8 @@ impl Iterator for TokenStream {
         let mut is_expect_intager = false;
 
         while self.offset < self.raw.len() {
+            // refactor it
+
             match self.raw[self.offset] {
                 b'0'..=b'9' => {
                     if token_start == self.offset {

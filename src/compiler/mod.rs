@@ -109,11 +109,6 @@ impl Compiler {
             return Err(());
         };
 
-        let codegen = CodeGenerater::new(&ast, self.option);
-
-        Ok((
-            codegen.generate_rust(),
-            codegen.generate_base()
-        ))
+        Ok(CodeGenerater::generate_static(&ast, self.option))
     }
 }

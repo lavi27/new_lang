@@ -10,6 +10,7 @@ use crate::{
     s,
 };
 
+// Anti pattern lol
 static mut skill_issue: LazyLock<FxHasher> = LazyLock::new(|| FxBuildHasher::default().build_hasher());
 
 pub fn get_static_var_hash(name: &str) -> String {
@@ -29,7 +30,7 @@ pub struct CodeGenerater<'a> {
 }
 
 impl<'a> CodeGenerater<'a> {
-    pub fn generate_static(ast: &'a AbstractSyntaxTree, opt: CompileOption) -> String {
+    pub fn generate_static(ast: &'a AbstractSyntaxTree, opt: CompileOption) -> (String, String) {
         let mut generater = Self::new(ast, opt);
         generater.generate_rust()
     }
@@ -50,22 +51,18 @@ impl<'a> CodeGenerater<'a> {
     //     format!("{:016x}", hash)
     // }
 
-    pub fn generate_base(&self) -> String {
-        let mut result = s!("");
-        
-        if self.ast.is_threading_used {
-            result += base_rust::THREADING_BASE;
-        }
-
-        result
-    }
-
-    pub fn generate_rust(&self) -> String {
+    pub fn generate_rust(&self) -> (String, String) {
+        // Find a way to format const str
         let mut result = format!("mod _newlang_base;\n");
-        
         result += self.ast.to_rust().as_str();
 
-        result
+        let mut base = s!("");
+        
+        if self.ast.is_threading_used {
+            base += base_rust::THREADING_BASE;
+        }
+
+        (result, base)
     }
 }
 
@@ -80,6 +77,7 @@ pub trait ToRust {
     fn to_rust(&self) -> String;
 }
 
+// move logic to CodeGen. Implement Visitor.
 impl ToRust for Expr {
     fn to_rust(&self) -> String {
         match self {
