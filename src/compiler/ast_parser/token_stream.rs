@@ -211,7 +211,7 @@ impl Iterator for TokenStream {
                         self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
                         return Some(result);
                     } else {
-                        row_start_offset = self.curr_col;
+                        row_start_offset = self.offset;
                         self.curr_col += 1;
                         token_start += 1;
                     }
