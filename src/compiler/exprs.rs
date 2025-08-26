@@ -1,3 +1,11 @@
+pub trait ExprVisitor {
+    fn visit_expr(&mut self, expr: &Expr);
+    fn visit_value_expr(&mut self, expr: &ValueExpr);
+    fn visit_var_def_expr(&mut self, expr: &VariableDefineExpr);
+    fn visit_codeblock(&mut self, expr: &CodeBlock);
+    fn visit_type_expr(&mut self, expr: &TypeExpr);
+    fn visit_namespace_chain(&mut self, expr: &NamespaceChain);
+}
 
 #[derive(Clone)]
 pub enum Expr {
