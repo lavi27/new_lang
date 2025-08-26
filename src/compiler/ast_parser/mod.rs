@@ -7,8 +7,7 @@ use std::{
 };
 
 use crate::{
-    s,
-    compiler::exprs::*,
+    compiler::exprs::*, s
 };
 
 use token_stream::*;
@@ -436,14 +435,13 @@ impl ASTParser {
             }
         };
 
-        result
-        // if let Some(chain_expr) = self.try_parse_object_chain(result.clone()) {
-        //     return chain_expr;
-        // } else if let Some(infix_expr) = self.try_parse_infix_value_exprs(result.clone()) {
-        //     return infix_expr;
-        // } else {
-        //     return result;
-        // }
+        if let Some(chain_expr) = self.try_parse_object_chain(result.clone()) {
+            return chain_expr;
+        } else if let Some(infix_expr) = self.try_parse_infix_value_exprs(result.clone()) {
+            return infix_expr;
+        } else {
+            return result;
+        }
     }
 
     fn parse_codeline(&mut self) -> Expr {
