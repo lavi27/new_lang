@@ -1,8 +1,8 @@
 use std::{collections::VecDeque, fmt, ops::Range, sync::LazyLock};
 
-use trie_rs::{Trie, TrieBuilder, inc_search::Answer};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
+use trie_rs::{inc_search::Answer, Trie, TrieBuilder};
 
 use crate::s;
 
@@ -37,26 +37,26 @@ macro_rules! define_tokens {
 define_tokens! {
     LeftParen => "(",
     RightParen => ")",
-    LeftBrace => s!("{"),
-    RightBrace => s!("}"),
-    LeftBracket => s!("["),
-    RightBracket => s!("]"),
-    LeftAngleBracket => s!("<"),
-    RightAngleBracket => s!(">"),
-    Comma => s!(","),
-    Period => s!("."),
-    Questionmark => s!("?"),
-    Exclamationmark => s!("!"),
-    Quote => s!("\'"),
-    DoubleQuote => s!("\""),
-    Colon => s!(":"),
-    Semicolon => s!(";"),
-    Slash => s!("/"),
-    Asterisk => s!("*"),
-    Plus => s!("+"),
-    Minus => s!("-"),
-    Equal => s!("="),
-    Namespace => s!("::"),
+    LeftBrace => "{",
+    RightBrace => "}",
+    LeftBracket => "[",
+    RightBracket => "]",
+    LeftAngleBracket => "<",
+    RightAngleBracket => ">",
+    Comma => ",",
+    Period => ".",
+    Questionmark => "?",
+    Exclamationmark => "!",
+    Quote => "\'",
+    DoubleQuote => "\"",
+    Colon => ":",
+    Semicolon => ";",
+    Slash => "/",
+    Asterisk => "*",
+    Plus => "+",
+    Minus => "-",
+    Equal => "=",
+    Namespace => "::",
     AddAssign => "+=",
     SubAssign => "-=",
     MulAssign => "*=",
@@ -65,8 +65,7 @@ define_tokens! {
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.to_string());
-        Ok(())
+        f.write_str(&self.as_str())
     }
 }
 
@@ -79,7 +78,7 @@ static SYMBOL_TOKEN_TRIE: LazyLock<Trie<u8>> = LazyLock::new(|| {
             _ => {}
         };
 
-        builder.push(var.to_string());
+        builder.push(var.as_str());
     }
 
     builder.build()
@@ -98,14 +97,13 @@ use TokenType as TT;
 pub struct TokenStream {
     raw: Vec<u8>,
     offset: usize,
-    token_start:usize,
+    token_start: usize,
 
     token_state: TokenType,
     row_start_offset: usize,
     curr_row: usize,
     curr_col_range: Range<usize>,
 
-    
     peek_cache: VecDeque<(Token, usize)>,
 }
 
@@ -156,7 +154,7 @@ impl TokenStream {
         self.offset = init_offest;
         self.curr_row = init_row;
         self.curr_col_range = init_col_range;
-        
+
         res
     }
 
@@ -187,15 +185,14 @@ impl TokenStream {
         let res = self._next_inner();
 
         self.curr_col_range.start = self.token_start - self.row_start_offset + 1;
-        self.curr_col_range.end = self.offset - 1 - self.row_start_offset + 1;
+        self.curr_col_range.end = self.offset - self.row_start_offset;
 
         res
     }
 
     fn extract_token(&self) -> Token {
-        let result =
-            String::from_utf8(self.raw[self.token_start..self.offset].to_vec()).unwrap();
-        
+        let result = String::from_utf8(self.raw[self.token_start..self.offset].to_vec()).unwrap();
+
         match self.token_state {
             TT::Integer => Token::Intager(result),
             TT::String => Token::String(result),
@@ -222,7 +219,7 @@ impl TokenStream {
                     if self.token_state != TT::None {
                         return Some(self.extract_token());
                     }
-                    
+
                     self.token_start += 1;
                 }
                 b'0'..=b'9' => match self.token_state {
@@ -233,7 +230,7 @@ impl TokenStream {
                         return Some(self.extract_token());
                     }
                     _ => {}
-                }
+                },
                 symbol if trie_search.peek(&symbol).is_some() => {
                     if self.token_state != TT::None && self.token_state != TT::Symbol {
                         return Some(self.extract_token());
@@ -259,7 +256,7 @@ impl TokenStream {
                     }
                     TT::None => self.token_state = TT::String,
                     _ => {}
-                }
+                },
             }
 
             self.offset += 1;
@@ -279,7 +276,7 @@ impl Iterator for TokenStream {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some((token, offset)) = self.peek_cache.pop_front() {
             self.offset = offset;
-            return Some(token)
+            return Some(token);
         };
 
         self.next_inner()

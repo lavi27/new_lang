@@ -1,7 +1,7 @@
 mod base_rust;
 
-use std::sync::LazyLock;
-use std::{hash::{BuildHasher, Hasher}};
+use std::hash::{BuildHasher, Hasher};
+use std::sync::{LazyLock, Mutex};
 
 use rustc_hash::{FxBuildHasher, FxHasher};
 
@@ -11,14 +11,17 @@ use crate::{
 };
 
 // Anti pattern lol
-static mut skill_issue: LazyLock<FxHasher> = LazyLock::new(|| FxBuildHasher::default().build_hasher());
+static mut skill_issue: LazyLock<Mutex<FxHasher>> =
+    LazyLock::new(|| Mutex::new(FxBuildHasher::default().build_hasher()));
 
 pub fn get_static_var_hash(name: &str) -> String {
     unsafe {
-    skill_issue.write(name.as_bytes());
-    let hash = skill_issue.finish();
-    
-    format!("_{}_{:016x}", name, hash)
+        let mut _skill_issue = skill_issue.lock().unwrap();
+
+        _skill_issue.write(name.as_bytes());
+        let hash = _skill_issue.finish();
+
+        format!("_{}_{:016x}", name, hash)
     }
 }
 
@@ -47,7 +50,7 @@ impl<'a> CodeGenerater<'a> {
     // fn get_static_var_hash(&mut self, name: String) -> String {
     //     self.static_var_hasher.write(name.as_str().as_bytes());
     //     let hash = self.static_var_hasher.finish();
-        
+
     //     format!("{:016x}", hash)
     // }
 
@@ -57,7 +60,7 @@ impl<'a> CodeGenerater<'a> {
         result += self.ast.to_rust().as_str();
 
         let mut base = s!("");
-        
+
         if self.ast.is_threading_used {
             base += base_rust::THREADING_BASE;
         }
@@ -326,7 +329,10 @@ pub fn parallel_for_in_to_rust(
         put!(res, "{{\n");
         {
             let var_thr_pool = get_static_var_hash("thr_pool");
-            put!(res, "let {var_thr_pool} = _newlang_base::get_thread_pool();\n");
+            put!(
+                res,
+                "let {var_thr_pool} = _newlang_base::get_thread_pool();\n"
+            );
             let var_iters = get_static_var_hash("iters");
             put!(res, "let mut {var_iters} = {};\n", iter.to_rust());
             let var_iter_chunks = get_static_var_hash("iter_chunks");
@@ -403,7 +409,12 @@ pub fn for_in_to_rust(
                     let mut end_cond = Vec::new();
 
                     for (idx, item) in iter_items.iter().enumerate() {
-                        put!(res, "let {} = {var_iters}.{}.next();\n", item.to_rust(), idx);
+                        put!(
+                            res,
+                            "let {} = {var_iters}.{}.next();\n",
+                            item.to_rust(),
+                            idx
+                        );
                         end_cond.push(format!("{}.is_none()", item.to_rust()));
                     }
 
