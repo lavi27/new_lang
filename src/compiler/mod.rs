@@ -33,11 +33,7 @@ impl Default for CompileOption {
 }
 
 impl Compiler {
-    pub fn compile_static(
-        path: String,
-        outdir: String,
-        opt: CompileOption,
-    ) -> Result<(), ()> {
+    pub fn compile_static(path: String, outdir: String, opt: CompileOption) -> Result<(), ()> {
         let mut compiler = Self::new(path, outdir, opt);
         compiler.compile()
     }
@@ -50,7 +46,7 @@ impl Compiler {
         }
     }
 
-    pub fn compile(&mut self) -> Result<(), ()> {        
+    pub fn compile(&mut self) -> Result<(), ()> {
         let input_code = {
             let mut tmp = String::with_capacity(256);
             let stdin = File::open(self.path.clone()).expect("msg");
@@ -78,7 +74,8 @@ impl Compiler {
             .status()
             .expect("Error during cargo build.");
 
-        let stdout = File::create(format!("{}/src/_newlang_base.rs", self.outdir.clone())).expect("msg");
+        let stdout =
+            File::create(format!("{}/src/_newlang_base.rs", self.outdir.clone())).expect("msg");
         let mut stdout = std::io::BufWriter::new(stdout);
         stdout.write_all(base_code.as_bytes());
 
@@ -98,11 +95,12 @@ impl Compiler {
         Ok(())
     }
 
-    fn compile_code(&mut self, mut input_code: String, filename: String) -> Result<(String, String), ()> {
-        let ast = ASTParser::parse_static(
-            filename.clone(),
-            take(&mut input_code)
-        );
+    fn compile_code(
+        &mut self,
+        mut input_code: String,
+        filename: String,
+    ) -> Result<(String, String), ()> {
+        let ast = ASTParser::parse_static(filename.clone(), take(&mut input_code));
         let Ok(ast) = ast else {
             unsafe { println!("{}", ast.unwrap_err_unchecked()) };
 

@@ -57,6 +57,8 @@ impl<'a> CodeGenerater<'a> {
     pub fn generate_rust(&self) -> (String, String) {
         // Find a way to format const str
         let mut result = format!("mod _newlang_base;\n");
+        // use _newlang_base as {}; static_var_name("_newlang_base");
+
         result += self.ast.to_rust().as_str();
 
         let mut base = s!("");
@@ -91,6 +93,18 @@ impl ToRust for Expr {
             Self::NamespaceChain(expr) => expr.to_rust() + ";",
             Self::EqualAssign { variable, value } => {
                 format!("{} = {};", variable.to_rust(), value.to_rust())
+            }
+            Self::AddAssign { variable, value } => {
+                format!("{} += {};", variable.to_rust(), value.to_rust())
+            }
+            Self::SubAssign { variable, value } => {
+                format!("{} -= {};", variable.to_rust(), value.to_rust())
+            }
+            Self::MulAssign { variable, value } => {
+                format!("{} *= {};", variable.to_rust(), value.to_rust())
+            }
+            Self::DivAssign { variable, value } => {
+                format!("{} /= {};", variable.to_rust(), value.to_rust())
             }
             Self::If {
                 condition,
@@ -326,33 +340,59 @@ pub fn parallel_for_in_to_rust(
             panic!("");
         };
 
-        put!(res, "{{\n");
+        put!(res, "unsafe {{\n");
         {
             let var_thr_pool = get_static_var_hash("thr_pool");
             put!(
                 res,
                 "let {var_thr_pool} = _newlang_base::get_thread_pool();\n"
             );
-            let var_iters = get_static_var_hash("iters");
-            put!(res, "let mut {var_iters} = {};\n", iter.to_rust());
-            let var_iter_chunks = get_static_var_hash("iter_chunks");
-            put!(res, "let {var_iter_chunks}: Vec<Vec<_>> = {var_iters}.chunks({var_thr_pool}.size).map(|c| c.to_vec()).collect();\n");
 
-            let var_chunk = get_static_var_hash("chunk");
-            put!(res, "for {var_chunk} in {var_iter_chunks} {{\n");
+            let var_rxs = get_static_var_hash("rxs");
+            put!(res, "let mut {var_rxs} = Vec::new();\n");
+            let var_range_chunks = get_static_var_hash("range_chunks");
+            put!(res, "let mut {var_range_chunks} = _newlang_base::range_chunks(0..{}.len(), {var_thr_pool}.size);\n", iter.to_rust());
+
+            let var_chunk_range = get_static_var_hash("chunk_range");
+            put!(
+                res,
+                "for ref mut {var_chunk_range} in {var_range_chunks} {{\n"
+            );
             {
-                put!(res, "{var_thr_pool}.execute(move || {{\n");
+                let var_iter_atom_ptr = get_static_var_hash("iter_atom_ptr");
+                put!(
+                    res,
+                    "let mut {var_iter_atom_ptr} = std::sync::atomic::AtomicPtr::new({}.as_mut_ptr());\n",
+                    iter.to_rust()
+                );
+
+                put!(res, "{var_rxs}.push({var_thr_pool}.execute(move || {{\n");
                 {
+                    let var_iter_ptr = get_static_var_hash("iter_ptr");
                     put!(
                         res,
-                        "for {} in {var_chunk} {}\n",
-                        iter_item,
-                        iter_body.to_rust()
+                        "let {var_iter_ptr} = {var_iter_atom_ptr}.load(std::sync::atomic::Ordering::Relaxed);"
                     );
+
+                    let var_idx = get_static_var_hash("idx");
+                    put!(res, "for {var_idx} in {var_chunk_range} {{\n");
+                    {
+                        put!(
+                            res,
+                            "let {iter_item} = &mut *{var_iter_ptr}.add({var_idx});\n"
+                        );
+                        put!(res, "{}", iter_body.to_rust());
+                    }
+                    put!(res, "}}\n");
                 }
-                put!(res, "}});\n");
+                put!(res, "}}));\n");
             }
             put!(res, "}};\n");
+
+            put!(
+                res,
+                "{var_rxs}.into_iter().for_each(|rx| rx.recv().unwrap());\n"
+            );
         }
         put!(res, "}}\n");
     };

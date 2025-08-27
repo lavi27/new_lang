@@ -4,8 +4,6 @@ use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use trie_rs::{inc_search::Answer, Trie, TrieBuilder};
 
-use crate::s;
-
 macro_rules! define_tokens {
     ($($name:ident => $str:expr),* $(,)?) => {
         #[derive(PartialEq, Eq, Clone, EnumIter)]
@@ -51,11 +49,14 @@ define_tokens! {
     DoubleQuote => "\"",
     Colon => ":",
     Semicolon => ";",
+    Ampersand => "&",
     Slash => "/",
     Asterisk => "*",
     Plus => "+",
     Minus => "-",
     Equal => "=",
+    BoolEqual => "==",
+    BoolNotEqual => "!=",
     Namespace => "::",
     AddAssign => "+=",
     SubAssign => "-=",

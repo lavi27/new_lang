@@ -4,6 +4,7 @@ pub const BASE: &str = "mod {newlang_base}
 pub const THREADING_BASE: &str = "use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::sync::OnceLock;
+use std::ops::Range;
 
 static THREAD_POOL: OnceLock<ThreadPool> = OnceLock::new();
 
@@ -27,9 +28,7 @@ impl Worker {
 
             if let Ok(job) = job {
                 job();
-            } else {
-                break;
-            }
+            };
         });
 
         Worker {
@@ -59,11 +58,20 @@ impl ThreadPool {
         ThreadPool { workers, sender, size }
     }
 
-    pub fn execute<F>(&self, f: F)
+    pub fn execute<F, R>(&self, f: F) -> mpsc::Receiver<R>
     where
-        F: FnOnce() + Send + 'static,
+        F: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
     {
-        self.sender.send(Box::new(f)).unwrap();
+        let (tx, rx) = mpsc::channel::<R>();
+        self.sender
+            .send(Box::new(move || {
+                let result = f();
+                tx.send(result).unwrap();
+            }))
+            .unwrap();
+
+        rx
     }
 }
 
@@ -76,5 +84,27 @@ impl Drop for ThreadPool {
             }
         }
     }
+}
+
+pub fn range_chunks(range: Range<usize>, num_chunks: usize) -> Vec<Range<usize>> {
+    let len = range.end - range.start;
+    if num_chunks == 0 || len == 0 {
+        return Vec::new();
+    }
+
+    let mut chunks = Vec::with_capacity(num_chunks);
+    let chunk_size = len / num_chunks;
+
+    let mut start = range.start;
+    for i in 0..(num_chunks - 1) {
+        let mut end = start + chunk_size;
+
+        chunks.push(start..start + chunk_size);
+        start = end;
+    }
+
+    chunks.push(start..range.end);
+
+    chunks
 }
 ";

@@ -7,7 +7,7 @@ fn main() {
   vec.push(4);
 
   parallelFor i in vec {
-    i = i + 1;
+    *i += 1;
   }
 
   print!("hello"); 

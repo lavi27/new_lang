@@ -13,6 +13,22 @@ pub enum Expr {
         variable: ValueExpr,
         value: ValueExpr,
     },
+    AddAssign {
+        variable: ValueExpr,
+        value: ValueExpr,
+    },
+    SubAssign {
+        variable: ValueExpr,
+        value: ValueExpr,
+    },
+    MulAssign {
+        variable: ValueExpr,
+        value: ValueExpr,
+    },
+    DivAssign {
+        variable: ValueExpr,
+        value: ValueExpr,
+    },
     If {
         condition: ValueExpr,
         if_body: CodeBlock,
@@ -45,7 +61,6 @@ pub enum Expr {
         args: Vec<VariableDefineExpr>,
         body: CodeBlock,
     },
-
     Return(ValueExpr),
     ValueExpr(ValueExpr),
     CodeBlock(CodeBlock),

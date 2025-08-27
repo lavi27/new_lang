@@ -6,9 +6,7 @@ use std::{
     panic::{self, AssertUnwindSafe},
 };
 
-use crate::{
-    compiler::exprs::*, s
-};
+use crate::{compiler::exprs::*, s};
 
 use token_stream::*;
 
@@ -59,7 +57,7 @@ impl ASTParser {
                 let err_msg = unsafe { line_res.unwrap_err_unchecked() };
 
                 panic::take_hook();
-                
+
                 let err_msg = if let Some(err_msg) = err_msg.downcast_ref::<String>() {
                     err_msg.to_string()
                 } else if let Some(err_msg) = err_msg.downcast_ref::<&str>() {
@@ -67,7 +65,7 @@ impl ASTParser {
                 } else {
                     panic!("Hell nah.");
                 };
-                
+
                 return Err(format!(
                     "Syntax Error (at {}:{col}:{start}): {}",
                     self.filename, err_msg
@@ -281,7 +279,8 @@ impl ASTParser {
 
             let right_val = self.parse_value_expr();
 
-            let right_val = self._try_parse_infix_value_exprs_recursive(right_val.clone(), priority)
+            let right_val = self
+                ._try_parse_infix_value_exprs_recursive(right_val.clone(), priority)
                 .unwrap_or(right_val);
 
             result = Some(match infix_token {
@@ -398,6 +397,7 @@ impl ASTParser {
                 let str = self.token_stream.string_before_char(b'\'');
                 ValueExpr::StringLiteral(str)
             }
+
             Token::Intager(int) => {
                 if self.is_next_token(Token::Period) {
                     let Some(token) = self.token_stream.next() else {
@@ -444,7 +444,7 @@ impl ASTParser {
 
         if let Some(chain_expr) = self.try_parse_object_chain(result.clone()) {
             return chain_expr;
-        } else if let Some(infix_expr) = self.try_parse_infix_value_exprs(result.clone()) {     
+        } else if let Some(infix_expr) = self.try_parse_infix_value_exprs(result.clone()) {
             return infix_expr;
         } else {
             return result;
@@ -576,16 +576,64 @@ impl ASTParser {
                 _ => {
                     let result = self.parse_value_expr();
 
-                    // 이 로직도 최적화 필요하긴 함
-                    if self.is_next_token(Token::Semicolon) {
-                        return Expr::ValueExpr(result);
-                    } else if self.is_next_token(Token::Equal) {
-                        let value = self.parse_value_expr();
-                        self.assert_next_token(Token::Semicolon);
+                    match self.token_stream.peek().unwrap() {
+                        Token::Semicolon => {
+                            self.token_stream.next();
+                            return Expr::ValueExpr(result);
+                        }
+                        Token::Equal => {
+                            self.token_stream.next();
+                            let value = self.parse_value_expr();
+                            self.assert_next_token(Token::Semicolon);
 
-                        return Expr::EqualAssign { variable: result, value };
-                    } else {
-                        panic!();
+                            return Expr::EqualAssign {
+                                variable: result,
+                                value,
+                            };
+                        }
+                        Token::AddAssign => {
+                            self.token_stream.next();
+                            let value = self.parse_value_expr();
+                            self.assert_next_token(Token::Semicolon);
+
+                            return Expr::AddAssign {
+                                variable: result,
+                                value,
+                            };
+                        }
+                        Token::SubAssign => {
+                            self.token_stream.next();
+                            let value = self.parse_value_expr();
+                            self.assert_next_token(Token::Semicolon);
+
+                            return Expr::SubAssign {
+                                variable: result,
+                                value,
+                            };
+                        }
+                        Token::MulAssign => {
+                            self.token_stream.next();
+                            let value = self.parse_value_expr();
+                            self.assert_next_token(Token::Semicolon);
+
+                            return Expr::MulAssign {
+                                variable: result,
+                                value,
+                            };
+                        }
+                        Token::DivAssign => {
+                            self.token_stream.next();
+                            let value = self.parse_value_expr();
+                            self.assert_next_token(Token::Semicolon);
+
+                            return Expr::DivAssign {
+                                variable: result,
+                                value,
+                            };
+                        }
+                        _ => {
+                            panic!();
+                        }
                     }
                 }
             },
