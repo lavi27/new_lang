@@ -372,7 +372,7 @@ pub fn for_in_to_rust(
             let var_iters = get_static_var_hash("iters");
             put!(
                 res,
-                "let mut {var_iters} = [{}];\n",
+                "let mut {var_iters} = ({});\n",
                 iters
                     .iter()
                     .map(|i| i.to_rust())
@@ -403,7 +403,7 @@ pub fn for_in_to_rust(
                     let mut end_cond = Vec::new();
 
                     for (idx, item) in iter_items.iter().enumerate() {
-                        put!(res, "let {} = {var_iters}[{}].next();\n", item.to_rust(), idx);
+                        put!(res, "let {} = {var_iters}.{}.next();\n", item.to_rust(), idx);
                         end_cond.push(format!("{}.is_none()", item.to_rust()));
                     }
 

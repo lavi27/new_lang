@@ -141,31 +141,35 @@ impl TokenStream {
     }
 
     pub fn peek_nth(&mut self, n: usize) -> Option<Token> {
-        let prev_offest = self.offset;
-        let prev_col = self.curr_col;
-        let prev_row_range = self.curr_row_range.clone();
+        let init_offest = self.offset;
+        let init_col = self.curr_col;
+        let init_row_range = self.curr_row_range.clone();
 
-        for _ in 0..n {
-            let Some(res) = self.next() else {
-                self.offset = prev_offest;
-                self.curr_col = prev_col;
-                self.curr_row_range = prev_row_range;
+        let mut res = None;
 
-                return None;
-            };
-            
-            self.peek_cache.push_front((res, self.offset));
+        if let Some((token, _)) = self.peek_cache.get(n) {
+            return Some(token.clone());
         }
 
-        let res = self.next();
-        if let Some(result) = res.clone() {
-            self.peek_cache.push_front((result, self.offset));
+        if let Some((token, offset)) = self.peek_cache.back() {
+            self.offset = *offset;
+            res = Some(token.clone());
         }
 
-        self.offset = prev_offest;
-        self.curr_col = prev_col;
-        self.curr_row_range = prev_row_range;
+        for _ in self.peek_cache.len()..=n {
+            res = self.next_inner();
 
+            if let Some(res) = res.clone() {
+                self.peek_cache.push_back((res, self.offset));
+            } else {
+                break;
+            }
+        }
+
+        self.offset = init_offest;
+        self.curr_col = init_col;
+        self.curr_row_range = init_row_range;
+        
         res
     }
 
@@ -302,8 +306,7 @@ impl Iterator for TokenStream {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some((token, offset)) = self.peek_cache.pop_back() {
-            println!("cache {}", token);
+        if let Some((token, offset)) = self.peek_cache.pop_front() {
             self.offset = offset;
             return Some(token)
         };

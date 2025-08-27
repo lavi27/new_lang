@@ -58,11 +58,16 @@ impl ASTParser {
                 let (col, Range { start, end }) = self.token_stream.get_curr_position();
                 let err_msg = unsafe { line_res.unwrap_err_unchecked() };
 
-                let Ok(err_msg) = err_msg.downcast::<String>() else {
+                panic::take_hook();
+                
+                let err_msg = if let Some(err_msg) = err_msg.downcast_ref::<String>() {
+                    err_msg.to_string()
+                } else if let Some(err_msg) = err_msg.downcast_ref::<&str>() {
+                    err_msg.to_string()
+                } else {
                     panic!("Hell nah.");
                 };
-
-                panic::take_hook();
+                
                 return Err(format!(
                     "Syntax Error (at {}:{col}:{start}): {}",
                     self.filename, err_msg
@@ -274,12 +279,10 @@ impl ASTParser {
                 break;
             }
 
-            let expr = self.parse_value_expr();
+            let right_val = self.parse_value_expr();
 
-            let Some(right_val) = self._try_parse_infix_value_exprs_recursive(expr, priority)
-            else {
-                panic!("Expected right value of infix expression.");
-            };
+            let right_val = self._try_parse_infix_value_exprs_recursive(right_val.clone(), priority)
+                .unwrap_or(right_val);
 
             result = Some(match infix_token {
                 Token::Plus => ValueExpr::Add(Box::new(left_val.clone()), Box::new(right_val)),
@@ -423,8 +426,6 @@ impl ASTParser {
                 if let Some(macro_expr) = self.try_parse_macro(str.clone(), namespace.clone()) {
                     macro_expr
                 } else if let Some(fn_expr) = self.try_parse_fn_call(str.clone(), namespace) {
-                    
-            println!("{}", self.token_stream.peek().unwrap());
                     fn_expr
                 } else if let Some(chain_expr) =
                     self.try_parse_object_chain(ValueExpr::Variable(str.clone()))
