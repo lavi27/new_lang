@@ -1,113 +1,66 @@
-use std::{collections::VecDeque, fmt, ops::Range};
+use std::{collections::VecDeque, fmt, ops::Range, sync::LazyLock};
+
+use trie_rs::{Trie, TrieBuilder, inc_search::Answer};
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 
 use crate::s;
 
-#[derive(PartialEq, Eq, Clone)]
-pub enum Token {
-    String(String),
-    Intager(String),
-    /// (
-    LeftParen,
-    /// )
-    RightParen,
-    /// {
-    LeftBrace,
-    /// }
-    RightBrace,
-    /// [
-    LeftBracket,
-    /// ]
-    RightBracket,
-    /// <
-    LeftAngleBracket,
-    /// >
-    RightAngleBracket,
-    /// ,
-    Comma,
-    /// .
-    Period,
-    /// ?
-    Questionmark,
-    /// !
-    Exclamationmark,
-    /// '
-    Quote,
-    /// "
-    DoubleQuote,
-    /// :
-    Colon,
-    /// ;
-    Semicolon,
-    /// /
-    Slash,
-    /// \*
-    Asterisk,
-    /// +
-    Plus,
-    /// -
-    Minus,
-    /// =
-    Equal,
-    /// ::
-    Namespace,
-}
+macro_rules! define_tokens {
+    ($($name:ident => $str:expr),* $(,)?) => {
+        #[derive(PartialEq, Eq, Clone, EnumIter)]
+        pub enum Token {
+            String(String),
+            Intager(String),
+            $($name),*
+        }
 
-impl Token {
-    fn char_byte_to_token(char: u8) -> Option<Token> {
-        Some(match char {
-            b'(' => Token::LeftParen,
-            b')' => Token::RightParen,
-            b'{' => Token::LeftBrace,
-            b'}' => Token::RightBrace,
-            b'[' => Token::LeftBracket,
-            b']' => Token::RightBracket,
-            b'<' => Token::LeftAngleBracket,
-            b'>' => Token::RightAngleBracket,
-            b',' => Token::Comma,
-            b'.' => Token::Period,
-            b'?' => Token::Questionmark,
-            b'!' => Token::Exclamationmark,
-            b'\'' => Token::Quote,
-            b'"' => Token::DoubleQuote,
-            b':' => Token::Colon,
-            b';' => Token::Semicolon,
-            b'/' => Token::Slash,
-            b'*' => Token::Asterisk,
-            b'+' => Token::Plus,
-            b'-' => Token::Minus,
-            b'=' => Token::Equal,
-            _ => return None,
-        })
-    }
+        impl Token {
+            fn from_str(s: &str) -> Option<Self> {
+                match s {
+                    $($str => Some(Token::$name),)*
+                    _ => None,
+                }
+            }
 
-    fn to_string(&self) -> String {
-        match self {
-            Token::String(str) => str.to_owned(),
-            Token::Intager(int) => int.to_string(),
-            Token::LeftParen => s!("("),
-            Token::RightParen => s!(")"),
-            Token::LeftBrace => s!("{"),
-            Token::RightBrace => s!("}"),
-            Token::LeftBracket => s!("["),
-            Token::RightBracket => s!("]"),
-            Token::LeftAngleBracket => s!("<"),
-            Token::RightAngleBracket => s!(">"),
-            Token::Comma => s!(","),
-            Token::Period => s!("."),
-            Token::Questionmark => s!("?"),
-            Token::Exclamationmark => s!("!"),
-            Token::Quote => s!("\'"),
-            Token::DoubleQuote => s!("\""),
-            Token::Colon => s!(":"),
-            Token::Semicolon => s!(";"),
-            Token::Slash => s!("/"),
-            Token::Asterisk => s!("*"),
-            Token::Plus => s!("+"),
-            Token::Minus => s!("-"),
-            Token::Equal => s!("="),
-            Token::Namespace => s!("::"),
+            fn as_str(&self) -> String {
+                match self {
+                    $(Token::$name => $str.to_string(),)*
+                    Token::String(str) => str.to_owned(),
+                    Token::Intager(int) => int.to_owned(),
+                }
+            }
         }
     }
+}
+
+define_tokens! {
+    LeftParen => "(",
+    RightParen => ")",
+    LeftBrace => s!("{"),
+    RightBrace => s!("}"),
+    LeftBracket => s!("["),
+    RightBracket => s!("]"),
+    LeftAngleBracket => s!("<"),
+    RightAngleBracket => s!(">"),
+    Comma => s!(","),
+    Period => s!("."),
+    Questionmark => s!("?"),
+    Exclamationmark => s!("!"),
+    Quote => s!("\'"),
+    DoubleQuote => s!("\""),
+    Colon => s!(":"),
+    Semicolon => s!(";"),
+    Slash => s!("/"),
+    Asterisk => s!("*"),
+    Plus => s!("+"),
+    Minus => s!("-"),
+    Equal => s!("="),
+    Namespace => s!("::"),
+    AddAssign => "+=",
+    SubAssign => "-=",
+    MulAssign => "*=",
+    DivAssign => "/=",
 }
 
 impl fmt::Display for Token {
@@ -117,11 +70,42 @@ impl fmt::Display for Token {
     }
 }
 
+static SYMBOL_TOKEN_TRIE: LazyLock<Trie<u8>> = LazyLock::new(|| {
+    let mut builder = TrieBuilder::new();
+
+    for var in Token::iter() {
+        match var {
+            Token::String(_) | Token::Intager(_) => continue,
+            _ => {}
+        };
+
+        builder.push(var.to_string());
+    }
+
+    builder.build()
+});
+
+#[derive(PartialEq)]
+enum TokenType {
+    None,
+    Integer,
+    String,
+    Symbol,
+}
+
+use TokenType as TT;
+
 pub struct TokenStream {
     raw: Vec<u8>,
     offset: usize,
-    curr_col: usize,
-    curr_row_range: Range<usize>,
+    token_start:usize,
+
+    token_state: TokenType,
+    row_start_offset: usize,
+    curr_row: usize,
+    curr_col_range: Range<usize>,
+
+    
     peek_cache: VecDeque<(Token, usize)>,
 }
 
@@ -130,9 +114,12 @@ impl TokenStream {
         Self {
             raw: str.into_bytes(),
             offset: 0,
-            curr_col: 1,
-            curr_row_range: Range { start: 1, end: 1 },
+            curr_row: 1,
+            token_state: TT::None,
+            curr_col_range: Range { start: 1, end: 1 },
             peek_cache: VecDeque::with_capacity(8),
+            token_start: 0,
+            row_start_offset: 0,
         }
     }
 
@@ -142,8 +129,8 @@ impl TokenStream {
 
     pub fn peek_nth(&mut self, n: usize) -> Option<Token> {
         let init_offest = self.offset;
-        let init_col = self.curr_col;
-        let init_row_range = self.curr_row_range.clone();
+        let init_row = self.curr_row;
+        let init_col_range = self.curr_col_range.clone();
 
         let mut res = None;
 
@@ -167,8 +154,8 @@ impl TokenStream {
         }
 
         self.offset = init_offest;
-        self.curr_col = init_col;
-        self.curr_row_range = init_row_range;
+        self.curr_row = init_row;
+        self.curr_col_range = init_col_range;
         
         res
     }
@@ -189,113 +176,97 @@ impl TokenStream {
     }
 
     pub fn get_curr_position(&self) -> (usize, Range<usize>) {
-        (self.curr_col, self.curr_row_range.clone())
+        (self.curr_row, self.curr_col_range.clone())
     }
 
     fn next_inner(&mut self) -> Option<Token> {
-        let mut token_start = self.offset;
-        let mut row_start_offset = self.offset;
-        let mut is_expect_intager = false;
+        self.token_start = self.offset;
+        self.row_start_offset = self.offset;
+        self.token_state = TT::None;
+
+        let res = self._next_inner();
+
+        self.curr_col_range.start = self.token_start - self.row_start_offset + 1;
+        self.curr_col_range.end = self.offset - 1 - self.row_start_offset + 1;
+
+        res
+    }
+
+    fn extract_token(&self) -> Token {
+        let result =
+            String::from_utf8(self.raw[self.token_start..self.offset].to_vec()).unwrap();
+        
+        match self.token_state {
+            TT::Integer => Token::Intager(result),
+            TT::String => Token::String(result),
+            TT::Symbol => Token::from_str(&result).unwrap(),
+            TT::None => panic!(),
+        }
+    }
+
+    fn _next_inner(&mut self) -> Option<Token> {
+        let mut trie_search = SYMBOL_TOKEN_TRIE.inc_search();
 
         while self.offset < self.raw.len() {
-            // refactor it
-            // 길이 1 초과인 심볼 대응하기
-
             match self.raw[self.offset] {
-                b'0'..=b'9' => {
-                    if token_start == self.offset {
-                        is_expect_intager = true;
-                    }
-                }
-                b':' if self.raw[self.offset + 1] == b':' => {
-                    if token_start != self.offset {
-                        let result =
-                            String::from_utf8(self.raw[token_start..self.offset].to_vec()).unwrap();
-                        let result = if is_expect_intager {
-                            Token::Intager(result)
-                        } else {
-                            Token::String(result)
-                        };
-
-                        self.curr_row_range.start = token_start - row_start_offset + 1;
-                        self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
-                        return Some(result);
-                    } else {
-                        self.offset += 2;
-                        self.curr_row_range.start = token_start - row_start_offset + 1;
-                        self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
-                        return Some(Token::Namespace);
-                    }
-                }
                 b'\n' => {
-                    if token_start != self.offset {
-                        let result =
-                            String::from_utf8(self.raw[token_start..self.offset].to_vec()).unwrap();
-                        let result = if is_expect_intager {
-                            Token::Intager(result)
-                        } else {
-                            Token::String(result)
-                        };
-
-                        self.curr_row_range.start = token_start - row_start_offset + 1;
-                        self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
-                        return Some(result);
-                    } else {
-                        row_start_offset = self.offset;
-                        self.curr_col += 1;
-                        token_start += 1;
+                    if self.token_state != TT::None {
+                        return Some(self.extract_token());
                     }
+
+                    self.row_start_offset = self.offset;
+                    self.curr_row += 1;
+                    self.token_start += 1;
                 }
                 b' ' | b'\t' | b'\r' => {
-                    if token_start != self.offset {
-                        let result =
-                            String::from_utf8(self.raw[token_start..self.offset].to_vec()).unwrap();
-                        let result = if is_expect_intager {
-                            Token::Intager(result)
-                        } else {
-                            Token::String(result)
-                        };
+                    if self.token_state != TT::None {
+                        return Some(self.extract_token());
+                    }
+                    
+                    self.token_start += 1;
+                }
+                b'0'..=b'9' => match self.token_state {
+                    TT::None => {
+                        self.token_state = TT::Integer;
+                    }
+                    TT::Symbol => {
+                        return Some(self.extract_token());
+                    }
+                    _ => {}
+                }
+                symbol if trie_search.peek(&symbol).is_some() => {
+                    if self.token_state != TT::None && self.token_state != TT::Symbol {
+                        return Some(self.extract_token());
+                    }
 
-                        self.curr_row_range.start = token_start - row_start_offset + 1;
-                        self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
+                    self.token_state = TT::Symbol;
+
+                    let query_res = trie_search.query(&symbol).unwrap();
+
+                    if query_res == Answer::Match {
                         self.offset += 1;
-                        return Some(result);
-                    } else {
-                        token_start += 1;
+                        return Some(self.extract_token());
                     }
                 }
-                char => {
-                    if let Some(token) = Token::char_byte_to_token(char) {
-                        if token_start != self.offset {
-                            let result =
-                                String::from_utf8(self.raw[token_start..self.offset].to_vec())
-                                    .unwrap();
-                            let result = if is_expect_intager {
-                                Token::Intager(result)
-                            } else {
-                                Token::String(result)
-                            };
-
-                            self.curr_row_range.start = token_start - row_start_offset + 1;
-                            self.curr_row_range.end = self.offset - 1 - row_start_offset + 1;
-                            return Some(result);
-                        } else {
-                            self.curr_row_range.start = token_start - row_start_offset + 1;
-                            self.curr_row_range.end = self.offset - row_start_offset + 1;
-                            self.offset += 1;
-                            return Some(token);
-                        }
-                    }
-
-                    if token_start != self.offset && is_expect_intager {
-                        self.curr_row_range.start = token_start - row_start_offset + 1;
-                        self.curr_row_range.end = self.offset - row_start_offset + 1;
+                char => match self.token_state {
+                    TT::Integer => {
+                        self.curr_col_range.start = self.token_start - self.row_start_offset + 1;
+                        self.curr_col_range.end = self.offset - self.row_start_offset + 1;
                         panic!("Number can't be prefix of any expression.");
                     }
+                    TT::Symbol => {
+                        return Some(self.extract_token());
+                    }
+                    TT::None => self.token_state = TT::String,
+                    _ => {}
                 }
             }
 
             self.offset += 1;
+
+            if self.token_state == TT::None {
+                self.token_start = self.offset;
+            }
         }
 
         None
