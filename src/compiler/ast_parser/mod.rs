@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::{
-    compiler::{code_generater::ToRust, exprs::*}, s
+    compiler::exprs::*, s
 };
 
 use token_stream::*;
@@ -387,6 +387,8 @@ impl ASTParser {
             panic!("Expected value expression. But File is ended.");
         };
 
+        println!("value {}", curr_token);
+
         let result = match curr_token {
             Token::DoubleQuote => {
                 let str = self.token_stream.string_before_char(b'"');
@@ -442,11 +444,9 @@ impl ASTParser {
 
         if let Some(chain_expr) = self.try_parse_object_chain(result.clone()) {
             return chain_expr;
-        } else if let Some(infix_expr) = self.try_parse_infix_value_exprs(result.clone()) {
+        } else if let Some(infix_expr) = self.try_parse_infix_value_exprs(result.clone()) {     
             return infix_expr;
         } else {
-
-            println!("{}", self.token_stream.peek().unwrap());
             return result;
         }
     }
@@ -455,6 +455,8 @@ impl ASTParser {
         let Some(curr_token) = self.token_stream.peek() else {
             panic!("Expected code line. But file is ended.");
         };
+
+        println!("line {}", curr_token);
 
         match curr_token {
             Token::String(str) => match str.as_str() {
@@ -579,6 +581,7 @@ impl ASTParser {
                         return Expr::ValueExpr(result);
                     } else if self.is_next_token(Token::Equal) {
                         let value = self.parse_value_expr();
+                        self.assert_next_token(Token::Semicolon);
 
                         return Expr::EqualAssign { variable: result, value };
                     } else {
