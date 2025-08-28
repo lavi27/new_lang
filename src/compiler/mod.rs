@@ -24,11 +24,12 @@ pub struct Compiler {
 #[derive(Clone, Copy)]
 pub struct CompileOption {
     pub transfile: bool,
+    pub run: bool,
 }
 
 impl Default for CompileOption {
     fn default() -> Self {
-        Self { transfile: false }
+        Self { transfile: false, run: false }
     }
 }
 
@@ -83,7 +84,15 @@ impl Compiler {
         let mut stdout = std::io::BufWriter::new(stdout);
         stdout.write_all(output_code.as_bytes());
 
-        if !self.option.transfile {
+
+        if self.option.run {
+            Command::new("cargo")
+                .arg("run")
+                .arg("--manifest-path")
+                .arg(self.outdir.clone() + "/Cargo.toml")
+                .spawn()
+                .expect("Error during cargo build.");
+        } else if !self.option.transfile {
             Command::new("cargo")
                 .arg("build")
                 .arg("--manifest-path")

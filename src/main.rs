@@ -23,6 +23,12 @@ enum Commands {
         #[arg(short, long)]
         transfile: bool,
     },
+    Run {
+        file_path: String,
+
+        #[arg(short, long)]
+        outdir: String,
+    },
 }
 
 fn main() {
@@ -35,6 +41,17 @@ fn main() {
                 outdir.clone(),
                 CompileOption {
                     transfile: transfile.clone(),
+                    run: false,
+                },
+            );
+        }
+        Commands::Run { file_path, outdir } => {
+            compiler::Compiler::compile_static(
+                file_path.clone(),
+                outdir.clone(),
+                CompileOption {
+                    transfile: false,
+                    run: true,
                 },
             );
         }
