@@ -1,18 +1,15 @@
+// use std::time::{Duration, Instant};
+
 fn main() {
   var vec = Vec::new();
-  vec.push(0);
-  vec.push(1);
-  vec.push(2);
-  vec.push(3);
-  vec.push(4);
-
-  for i in 0..10000 {
-    
+  for i in 0..1000000 {
+    vec.push(i);
   }
 
+  let start = std::time::Instant::now();
   parallelFor i in vec {
     *i += 1;
   }
 
-  print!("{}", vec[0]); 
+  println!("{:?}", start.elapsed()); 
 }

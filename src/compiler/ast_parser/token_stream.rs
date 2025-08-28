@@ -64,6 +64,7 @@ define_tokens! {
     DivAssign => "/=",
     Range => "..",
     InclusiveRange => "..=",
+    Comment => "//",
 }
 
 impl fmt::Display for Token {
@@ -178,6 +179,17 @@ impl TokenStream {
 
     pub fn get_curr_position(&self) -> (usize, Range<usize>) {
         (self.curr_row, self.curr_col_range.clone())
+    }
+
+    pub fn skip_line(&mut self) {
+        while self.offset < self.raw.len() {
+            if self.raw[self.offset] == b'\n' {
+                self.offset += 1;
+                return;
+            }
+
+            self.offset += 1;
+        }
     }
 
     fn next_inner(&mut self) -> Option<Token> {

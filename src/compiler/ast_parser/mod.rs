@@ -690,6 +690,11 @@ impl ASTParser {
                 self.token_stream.next();
                 self.parse_codeline()
             }
+            Token::Comment => {
+                self.token_stream.next();
+                self.token_stream.skip_line();
+                self.parse_codeline()
+            }
             Token::Asterisk => {
                 self.token_stream.next();
                 let var = ValueExpr::Dereference(self.get_string_token());
