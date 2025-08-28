@@ -1,9 +1,8 @@
 mod base_rust;
 
 use std::hash::{BuildHasher, Hasher};
-use std::sync::{LazyLock, Mutex};
-
-use rustc_hash::{FxBuildHasher, FxHasher};
+use std::sync::{LazyLock};
+use ahash;
 
 use crate::{
     compiler::{ast_parser::*, exprs::*, CompileOption},
@@ -11,18 +10,16 @@ use crate::{
 };
 
 // Anti pattern lol
-static mut skill_issue: LazyLock<Mutex<FxHasher>> =
-    LazyLock::new(|| Mutex::new(FxBuildHasher::default().build_hasher()));
+static mut skill_issue: LazyLock<ahash::RandomState> =
+    LazyLock::new(|| ahash::RandomState::new());
 
 pub fn get_static_var_hash(name: &str) -> String {
-    unsafe {
-        let mut _skill_issue = skill_issue.lock().unwrap();
+    let mut hasher = unsafe {skill_issue.build_hasher()};
 
-        _skill_issue.write(name.as_bytes());
-        let hash = _skill_issue.finish();
+    hasher.write(name.as_bytes());
+    let hash = hasher.finish();
 
-        format!("_{}_{:016x}", name, hash)
-    }
+    format!("_{}_{:016x}", name, hash)
 }
 
 pub struct CodeGenerater<'a> {
@@ -56,8 +53,9 @@ impl<'a> CodeGenerater<'a> {
 
     pub fn generate_rust(&self) -> (String, String) {
         // Find a way to format const str
-        let mut result = format!("mod _newlang_base;\n");
-        // use _newlang_base as {}; static_var_name("_newlang_base");
+
+        let namespace_newlang = get_static_var_hash("newlang");
+        let mut result = format!("mod _newlang_base;\nuse _newlang_base as {namespace_newlang};");
 
         result += self.ast.to_rust().as_str();
 
@@ -334,6 +332,7 @@ pub fn parallel_for_in_to_rust(
     remain_body: &Option<CodeBlock>,
 ) -> String {
     let mut res = String::with_capacity(128);
+    let namespace_newlang = get_static_var_hash("newlang");
 
     if let ValueExpr::Tuple(items) = iter {
         todo!();
@@ -347,7 +346,7 @@ pub fn parallel_for_in_to_rust(
             let var_thr_pool = get_static_var_hash("thr_pool");
             put!(
                 res,
-                "let {var_thr_pool} = _newlang_base::get_thread_pool();\n"
+                "let {var_thr_pool} = {namespace_newlang}::get_thread_pool();\n"
             );
 
             let var_rxs = get_static_var_hash("rxs");
@@ -356,7 +355,7 @@ pub fn parallel_for_in_to_rust(
             let var_chunk_range = get_static_var_hash("chunk_range");
             put!(
                 res,
-                "for {var_chunk_range} in _newlang_base::range_chunks(0..{}.len(), {var_thr_pool}.size(), 64) {{\n",
+                "for {var_chunk_range} in {namespace_newlang}::range_chunks(0..{}.len(), {var_thr_pool}.size(), 64) {{\n",
                 iter.to_rust()
             );
             {
