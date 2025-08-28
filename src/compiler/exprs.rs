@@ -80,8 +80,14 @@ pub enum ValueExpr {
     Div(Box<ValueExpr>, Box<ValueExpr>),
     LessThan(Box<ValueExpr>, Box<ValueExpr>),
     GreaterThan(Box<ValueExpr>, Box<ValueExpr>),
+    Reference(String),
+    Dereference(String),
     Tuple(Vec<ValueExpr>),
     Variable(String),
+    Indexing{ 
+        value: Box<ValueExpr>,
+        index: Box<ValueExpr>,   
+    },
     FnCall {
         namespace: NamespaceChain,
         name: String,

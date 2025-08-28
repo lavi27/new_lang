@@ -10,5 +10,5 @@ fn main() {
     *i += 1;
   }
 
-  print!("hello"); 
+  print!("{}", vec[0]); 
 }

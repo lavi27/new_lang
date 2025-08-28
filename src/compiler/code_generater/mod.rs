@@ -185,6 +185,9 @@ impl ToRust for ValueExpr {
             Self::GreaterThan(lvel, rvel) => format!("{}>{}", lvel.to_rust(), rvel.to_rust()),
             Self::Tuple(exprs) => format!("({})", expr_vec_to_rust(exprs, ", ")),
             Self::Variable(var) => var.to_string(),
+            Self::Reference(expr) => format!("&{}", expr),
+            Self::Dereference(expr) => format!("*{}", expr),
+            Self::Indexing { value, index } => format!("{}[{}]", value.to_rust(), index.to_rust()),
             Self::FnCall {
                 namespace,
                 name,
@@ -218,7 +221,6 @@ impl ToRust for ValueExpr {
             Self::ObjectField { objcet, field } => {
                 format!("{}.{}", objcet.to_rust(), field.to_owned())
             }
-
             Self::MethodCall {
                 object,
                 method,
@@ -350,13 +352,12 @@ pub fn parallel_for_in_to_rust(
 
             let var_rxs = get_static_var_hash("rxs");
             put!(res, "let mut {var_rxs} = Vec::new();\n");
-            let var_range_chunks = get_static_var_hash("range_chunks");
-            put!(res, "let mut {var_range_chunks} = _newlang_base::range_chunks(0..{}.len(), {var_thr_pool}.size);\n", iter.to_rust());
 
             let var_chunk_range = get_static_var_hash("chunk_range");
             put!(
                 res,
-                "for ref mut {var_chunk_range} in {var_range_chunks} {{\n"
+                "for {var_chunk_range} in _newlang_base::range_chunks(0..{}.len(), {var_thr_pool}.size(), 64) {{\n",
+                iter.to_rust()
             );
             {
                 let var_iter_atom_ptr = get_static_var_hash("iter_atom_ptr");

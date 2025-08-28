@@ -40,7 +40,7 @@ impl Worker {
 pub struct ThreadPool {
     workers: Vec<Worker>,
     sender: mpsc::Sender<Job>,
-    pub size: usize,
+    size: usize,
 }
 
 impl ThreadPool {
@@ -56,6 +56,10 @@ impl ThreadPool {
         }
 
         ThreadPool { workers, sender, size }
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
     }
 
     pub fn execute<F, R>(&self, f: F) -> mpsc::Receiver<R>
@@ -77,7 +81,6 @@ impl ThreadPool {
 
 impl Drop for ThreadPool {
     fn drop(&mut self) {
-        drop(&self.sender);
         for worker in &mut self.workers {
             if let Some(handle) = worker.handle.take() {
                 handle.join().unwrap();
@@ -86,20 +89,21 @@ impl Drop for ThreadPool {
     }
 }
 
-pub fn range_chunks(range: Range<usize>, num_chunks: usize) -> Vec<Range<usize>> {
+pub fn range_chunks(range: Range<usize>, num_chunks: usize, min_size: usize) -> Vec<Range<usize>> {
     let len = range.end - range.start;
     if num_chunks == 0 || len == 0 {
         return Vec::new();
     }
 
+    let chunk_size = min_size.max(len / num_chunks);
+    let num_chunks = len / chunk_size;
     let mut chunks = Vec::with_capacity(num_chunks);
-    let chunk_size = len / num_chunks;
 
     let mut start = range.start;
-    for i in 0..(num_chunks - 1) {
-        let mut end = start + chunk_size;
+    while start+chunk_size < num_chunks*chunk_size {
+        let end = start + chunk_size;
 
-        chunks.push(start..start + chunk_size);
+        chunks.push(start..end);
         start = end;
     }
 

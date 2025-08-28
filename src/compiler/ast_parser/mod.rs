@@ -6,7 +6,7 @@ use std::{
     panic::{self, AssertUnwindSafe},
 };
 
-use crate::{compiler::exprs::*, s};
+use crate::{compiler::{code_generater::ToRust, exprs::*}, s};
 
 use token_stream::*;
 
@@ -83,9 +83,7 @@ impl ASTParser {
     // self.token_stream을 직접 조작하는 저수준 매서드.
 
     fn assert_next_token(&mut self, token: Token) {
-        let Some(curr_token) = self.token_stream.next() else {
-            panic!("Expected '{token}'. But file is ended.");
-        };
+        let curr_token = self.token_stream.next().expect("Expected '{token}'. But file is ended.");
 
         if curr_token != token {
             panic!("Expected '{token}'. Found '{curr_token}'.");
@@ -93,9 +91,7 @@ impl ASTParser {
     }
 
     fn get_string_token(&mut self) -> String {
-        let Some(curr_token) = self.token_stream.next() else {
-            panic!("Expected some name. But file is ended.");
-        };
+        let curr_token = self.token_stream.next().expect("Expected some name. But file is ended.");
 
         let Token::String(str) = curr_token else {
             panic!("'{curr_token}' can't be included to some name.");
@@ -328,6 +324,81 @@ impl ASTParser {
         }
     }
 
+
+    fn try_parse_indexing_chain(&mut self, value: ValueExpr) -> Option<ValueExpr> {
+        if self.token_stream.peek() != Some(Token::LeftBracket) {
+            return None;
+        }
+
+        let mut prev_expr = value;
+        
+        while self.is_next_token(Token::LeftBracket) {
+            let index = self.parse_value_expr();
+
+            prev_expr = ValueExpr::Indexing {
+                value: Box::new(prev_expr),
+                index: Box::new(index)
+            };
+
+            self.assert_next_token(Token::RightBracket);
+        }
+
+        Some(prev_expr)
+    }
+
+    fn try_parse_infix_expr(&mut self, variable: ValueExpr) -> Option<Expr> {
+        Some(match self.token_stream.peek().unwrap() {
+            Token::Equal => {
+                self.token_stream.next();
+                let value = self.parse_value_expr();
+
+                Expr::EqualAssign {
+                    variable,
+                    value,
+                }
+            }
+            Token::AddAssign => {
+                self.token_stream.next();
+                let value = self.parse_value_expr();
+
+                Expr::AddAssign {
+                    variable,
+                    value,
+                }
+            }
+            Token::SubAssign => {
+                self.token_stream.next();
+                let value = self.parse_value_expr();
+                
+                Expr::SubAssign {
+                    variable,
+                    value,
+                }
+            }
+            Token::MulAssign => {
+                self.token_stream.next();
+                let value = self.parse_value_expr();
+                
+                Expr::MulAssign {
+                    variable,
+                    value,
+                }
+            }
+            Token::DivAssign => {
+                self.token_stream.next();
+                let value = self.parse_value_expr();
+                
+                Expr::DivAssign {
+                    variable,
+                    value,
+                }
+            }
+            _ => {
+                return None;
+            }
+        })
+    }
+
     // # HIGH LEVEL METHODS #
     // 사이드이펙트가 최소이며, 언제든 호출해도 기능이 보장되는 매서드들.
 
@@ -362,9 +433,7 @@ impl ASTParser {
     }
 
     fn parse_variable_define_expr(&mut self) -> VariableDefineExpr {
-        let Some(curr_token) = self.token_stream.next() else {
-            panic!("Expected variable define expression. But file is ended.");
-        };
+        let curr_token = self.token_stream.next().expect("Expected variable define expression. But file is ended.");
 
         if let Token::String(str) = curr_token {
             if self.is_next_token(Token::Colon) {
@@ -382,9 +451,7 @@ impl ASTParser {
     }
 
     fn parse_value_expr(&mut self) -> ValueExpr {
-        let Some(curr_token) = self.token_stream.next() else {
-            panic!("Expected value expression. But File is ended.");
-        };
+        let curr_token = self.token_stream.next().expect("Expected value expression. But File is ended.");
 
         println!("value {}", curr_token);
 
@@ -400,9 +467,7 @@ impl ASTParser {
 
             Token::Intager(int) => {
                 if self.is_next_token(Token::Period) {
-                    let Some(token) = self.token_stream.next() else {
-                        panic!("Expected decimal places of float literal.");
-                    };
+                    let token = self.token_stream.next().expect("Expected decimal places of float literal.");
 
                     let Token::Intager(decimal_places) = token else {
                         panic!("Invalid decimal places of float literal.");
@@ -421,6 +486,15 @@ impl ASTParser {
                 let items = self.parse_comma_value_exprs(Token::RightParen);
 
                 ValueExpr::Tuple(items)
+            }
+            Token::Asterisk => {
+                let var = self.get_string_token();
+                // todo
+                ValueExpr::Dereference(var)
+            }
+            Token::Ampersand => {
+                let var = self.get_string_token();
+                ValueExpr::Reference(var)
             }
             Token::String(str) => {
                 let (namespace, str) = self.try_parse_namespace(str.clone());
@@ -446,15 +520,15 @@ impl ASTParser {
             return chain_expr;
         } else if let Some(infix_expr) = self.try_parse_infix_value_exprs(result.clone()) {
             return infix_expr;
+        } else if let Some(index_expr) = self.try_parse_indexing_chain(result.clone()) {
+            return index_expr;
         } else {
             return result;
         }
     }
 
     fn parse_codeline(&mut self) -> Expr {
-        let Some(curr_token) = self.token_stream.peek() else {
-            panic!("Expected code line. But file is ended.");
-        };
+        let curr_token = self.token_stream.peek().expect("Expected code line. But file is ended.");
 
         println!("line {}", curr_token);
 
@@ -574,72 +648,36 @@ impl ASTParser {
                     Expr::Return(value)
                 }
                 _ => {
-                    let result = self.parse_value_expr();
+                    let var = self.parse_value_expr();
+                
+                    let res = if let Some(infix_expr) = self.try_parse_infix_expr(var.clone()) {
+                        infix_expr
+                    } else {
+                        Expr::ValueExpr(var)
+                    };
 
-                    match self.token_stream.peek().unwrap() {
-                        Token::Semicolon => {
-                            self.token_stream.next();
-                            return Expr::ValueExpr(result);
-                        }
-                        Token::Equal => {
-                            self.token_stream.next();
-                            let value = self.parse_value_expr();
-                            self.assert_next_token(Token::Semicolon);
+                    self.assert_next_token(Token::Semicolon);
 
-                            return Expr::EqualAssign {
-                                variable: result,
-                                value,
-                            };
-                        }
-                        Token::AddAssign => {
-                            self.token_stream.next();
-                            let value = self.parse_value_expr();
-                            self.assert_next_token(Token::Semicolon);
-
-                            return Expr::AddAssign {
-                                variable: result,
-                                value,
-                            };
-                        }
-                        Token::SubAssign => {
-                            self.token_stream.next();
-                            let value = self.parse_value_expr();
-                            self.assert_next_token(Token::Semicolon);
-
-                            return Expr::SubAssign {
-                                variable: result,
-                                value,
-                            };
-                        }
-                        Token::MulAssign => {
-                            self.token_stream.next();
-                            let value = self.parse_value_expr();
-                            self.assert_next_token(Token::Semicolon);
-
-                            return Expr::MulAssign {
-                                variable: result,
-                                value,
-                            };
-                        }
-                        Token::DivAssign => {
-                            self.token_stream.next();
-                            let value = self.parse_value_expr();
-                            self.assert_next_token(Token::Semicolon);
-
-                            return Expr::DivAssign {
-                                variable: result,
-                                value,
-                            };
-                        }
-                        _ => {
-                            panic!();
-                        }
-                    }
+                    res
                 }
             },
             Token::Semicolon => {
                 self.token_stream.next();
                 self.parse_codeline()
+            }
+            Token::Asterisk => {
+                self.token_stream.next();
+                let var = ValueExpr::Dereference(self.get_string_token());
+        
+                let res = if let Some(infix_expr) = self.try_parse_infix_expr(var.clone()) {
+                    infix_expr
+                } else {
+                    Expr::ValueExpr(var)
+                };
+
+                self.assert_next_token(Token::Semicolon);
+
+                res
             }
             other => {
                 panic!("Unexpected expression '{other}'.");
