@@ -89,6 +89,8 @@ impl ToRust for Expr {
             Self::VariableDefineExpr(expr) => expr.to_rust() + ";",
             Self::TypeExpr(expr) => expr.to_rust() + ";",
             Self::NamespaceChain(expr) => expr.to_rust() + ";",
+            Self::NamespaceTree(expr) => expr.to_rust() + ";",
+            Self::NamespaceUse(expr) => format!("use {};", expr.to_rust()),
             Self::EqualAssign { variable, value } => {
                 format!("{} = {};", variable.to_rust(), value.to_rust())
             }
@@ -303,6 +305,29 @@ impl ToRust for NamespaceChain {
             .map(|i| i.clone())
             .collect::<Vec<String>>()
             .join("::")
+    }
+}
+
+impl ToRust for NamespaceTree {
+    fn to_rust(&self) -> String {
+        let body = self.0
+            .iter()
+            .map(|i| i.clone())
+            .collect::<Vec<String>>()
+            .join("::");
+
+        let tail = if let Some(tail) = &self.1 {
+            let items = tail.iter()
+                .map(|i| i.to_rust())
+                .collect::<Vec<String>>()
+                .join(", ");
+
+            format!("::{{{}}}", items)
+        } else {
+            s!("")
+        };
+
+        format!("{}{}", body, tail)
     }
 }
 

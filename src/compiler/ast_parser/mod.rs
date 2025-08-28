@@ -184,6 +184,31 @@ impl ASTParser {
         return items;
     }
 
+    fn parse_namespace_tree(&mut self) -> NamespaceTree {
+        let mut body = vec![self.get_string_token()];
+        
+        loop {
+            if !self.is_next_token(Token::Namespace) {
+                return NamespaceTree(body, None);
+            };
+            
+            if self.is_next_token(Token::LeftBrace) {
+                break;
+            };
+
+            body.push(self.get_string_token());
+        };
+
+        let mut tail = vec![self.parse_namespace_tree()];
+        while self.is_next_token(Token::Comma) {
+            tail.push(self.parse_namespace_tree());
+        }
+
+        self.assert_next_token(Token::RightBrace);
+        
+        NamespaceTree(body, Some(tail))
+    }
+
     // # TRY- METHODS #
     // 조건 검증과 처리를 동시에 수행하는 매서드들, 여러번 호출해도 무방한 것들. 인자 외에는 호출시 조건이 필요 없음.
     // if let Some(_) = ... 구조로 사용할 것.
@@ -671,6 +696,11 @@ impl ASTParser {
                     self.assert_next_token(Token::Semicolon);
 
                     Expr::Return(value)
+                }
+                "use" => {
+                    self.token_stream.next();
+                    
+                    Expr::NamespaceUse(self.parse_namespace_tree())
                 }
                 _ => {
                     let var = self.parse_value_expr();

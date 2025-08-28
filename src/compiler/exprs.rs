@@ -4,7 +4,7 @@ pub trait ExprVisitor {
     fn visit_var_def_expr(&mut self, expr: &VariableDefineExpr);
     fn visit_codeblock(&mut self, expr: &CodeBlock);
     fn visit_type_expr(&mut self, expr: &TypeExpr);
-    fn visit_namespace_chain(&mut self, expr: &NamespaceChain);
+    fn visit_namespace_tree(&mut self, expr: &NamespaceTree);
 }
 
 #[derive(Clone)]
@@ -67,6 +67,8 @@ pub enum Expr {
     VariableDefineExpr(VariableDefineExpr),
     TypeExpr(TypeExpr),
     NamespaceChain(NamespaceChain),
+    NamespaceTree(NamespaceTree),
+    NamespaceUse(NamespaceTree),
 }
 
 #[derive(Clone)]
@@ -130,6 +132,9 @@ pub enum TypeExpr {
     Tuple(Vec<TypeExpr>),
     WithArgs(String, Vec<TypeExpr>),
 }
+
+#[derive(Clone)]
+pub struct NamespaceTree(pub Vec<String>, pub Option<Vec<NamespaceTree>>);
 
 #[derive(Clone)]
 pub struct NamespaceChain(pub Vec<String>);
