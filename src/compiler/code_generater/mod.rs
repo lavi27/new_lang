@@ -55,7 +55,7 @@ impl<'a> CodeGenerater<'a> {
         // Find a way to format const str
 
         let namespace_newlang = get_static_var_hash("newlang");
-        let mut result = format!("mod _newlang_base;\nuse _newlang_base as {namespace_newlang};");
+        let mut result = format!("mod _newlang_base;\nuse _newlang_base as {namespace_newlang};\n");
 
         result += self.ast.to_rust().as_str();
 
@@ -186,6 +186,13 @@ impl ToRust for ValueExpr {
             Self::Reference(expr) => format!("&{}", expr),
             Self::Dereference(expr) => format!("*{}", expr),
             Self::Indexing { value, index } => format!("{}[{}]", value.to_rust(), index.to_rust()),
+            Self::Range { start, end, is_inclusive } => {
+                if is_inclusive.clone() {
+                    format!("{}..={}", start.to_rust(), end.to_rust())
+                } else {
+                    format!("{}..{}", start.to_rust(), end.to_rust())
+                }
+            }
             Self::FnCall {
                 namespace,
                 name,

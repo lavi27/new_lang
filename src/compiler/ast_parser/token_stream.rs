@@ -62,6 +62,8 @@ define_tokens! {
     SubAssign => "-=",
     MulAssign => "*=",
     DivAssign => "/=",
+    Range => "..",
+    InclusiveRange => "..=",
 }
 
 impl fmt::Display for Token {

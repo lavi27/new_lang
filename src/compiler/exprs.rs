@@ -84,9 +84,14 @@ pub enum ValueExpr {
     Dereference(String),
     Tuple(Vec<ValueExpr>),
     Variable(String),
-    Indexing{ 
+    Indexing { 
         value: Box<ValueExpr>,
         index: Box<ValueExpr>,   
+    },
+    Range {
+        start: Box<ValueExpr>,
+        end: Box<ValueExpr>,
+        is_inclusive: bool,
     },
     FnCall {
         namespace: NamespaceChain,

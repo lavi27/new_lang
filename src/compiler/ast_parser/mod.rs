@@ -399,6 +399,28 @@ impl ASTParser {
         })
     }
 
+    fn try_parse_range_expr(&mut self, start: ValueExpr) -> Option<ValueExpr> {
+        if self.is_next_token(Token::Range) {
+            let end = self.parse_value_expr();
+
+            return Some(ValueExpr::Range {
+                start: Box::new(start),
+                end: Box::new(end),
+                is_inclusive: false
+            })
+        } else if self.is_next_token(Token::InclusiveRange) {
+            let end = self.parse_value_expr();
+            
+            return Some(ValueExpr::Range {
+                start: Box::new(start),
+                end: Box::new(end),
+                is_inclusive: true
+            })
+        }
+
+        None
+    }
+
     // # HIGH LEVEL METHODS #
     // 사이드이펙트가 최소이며, 언제든 호출해도 기능이 보장되는 매서드들.
 
@@ -464,7 +486,6 @@ impl ASTParser {
                 let str = self.token_stream.string_before_char(b'\'');
                 ValueExpr::StringLiteral(str)
             }
-
             Token::Intager(int) => {
                 if self.is_next_token(Token::Period) {
                     let token = self.token_stream.next().expect("Expected decimal places of float literal.");
@@ -516,12 +537,16 @@ impl ASTParser {
             }
         };
 
+        // 서로 다른 표현식이 교자하면 못쓰는 로직.
+
         if let Some(chain_expr) = self.try_parse_object_chain(result.clone()) {
             return chain_expr;
         } else if let Some(infix_expr) = self.try_parse_infix_value_exprs(result.clone()) {
             return infix_expr;
         } else if let Some(index_expr) = self.try_parse_indexing_chain(result.clone()) {
             return index_expr;
+        } else if let Some(range_expr) = self.try_parse_range_expr(result.clone()) {
+            return range_expr;
         } else {
             return result;
         }
