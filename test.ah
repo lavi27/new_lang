@@ -6,9 +6,9 @@ fn main() {
     vec.push(i);
   }
 
-  let start = std::time::Instant::now();
-  parallelFor i in vec {
-    *i += 1;
+  let start = Instant::now();
+  for i in vec {
+    i += 1;
   }
 
   println!("{:?}", start.elapsed()); 

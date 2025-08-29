@@ -1,8 +1,8 @@
 mod base_rust;
 
-use std::hash::{BuildHasher, Hasher};
-use std::sync::{LazyLock};
 use ahash;
+use std::hash::{BuildHasher, Hasher};
+use std::sync::LazyLock;
 
 use crate::{
     compiler::{ast_parser::*, exprs::*, CompileOption},
@@ -10,11 +10,10 @@ use crate::{
 };
 
 // Anti pattern lol
-static mut skill_issue: LazyLock<ahash::RandomState> =
-    LazyLock::new(|| ahash::RandomState::new());
+static mut skill_issue: LazyLock<ahash::RandomState> = LazyLock::new(|| ahash::RandomState::new());
 
 pub fn get_static_var_hash(name: &str) -> String {
-    let mut hasher = unsafe {skill_issue.build_hasher()};
+    let mut hasher = unsafe { skill_issue.build_hasher() };
 
     hasher.write(name.as_bytes());
     let hash = hasher.finish();
@@ -188,7 +187,11 @@ impl ToRust for ValueExpr {
             Self::Reference(expr) => format!("&{}", expr),
             Self::Dereference(expr) => format!("*{}", expr),
             Self::Indexing { value, index } => format!("{}[{}]", value.to_rust(), index.to_rust()),
-            Self::Range { start, end, is_inclusive } => {
+            Self::Range {
+                start,
+                end,
+                is_inclusive,
+            } => {
                 if is_inclusive.clone() {
                     format!("{}..={}", start.to_rust(), end.to_rust())
                 } else {
@@ -310,14 +313,16 @@ impl ToRust for NamespaceChain {
 
 impl ToRust for NamespaceTree {
     fn to_rust(&self) -> String {
-        let body = self.0
+        let body = self
+            .0
             .iter()
             .map(|i| i.clone())
             .collect::<Vec<String>>()
             .join("::");
 
         let tail = if let Some(tail) = &self.1 {
-            let items = tail.iter()
+            let items = tail
+                .iter()
                 .map(|i| i.to_rust())
                 .collect::<Vec<String>>()
                 .join(", ");
@@ -373,7 +378,7 @@ pub fn parallel_for_in_to_rust(
             panic!("");
         };
 
-        put!(res, "unsafe {{\n");
+        put!(res, "{{\n");
         {
             let var_thr_pool = get_static_var_hash("thr_pool");
             put!(
@@ -382,40 +387,36 @@ pub fn parallel_for_in_to_rust(
             );
 
             let var_rxs = get_static_var_hash("rxs");
-            put!(res, "let mut {var_rxs} = Vec::new();\n");
-
-            let var_chunk_range = get_static_var_hash("chunk_range");
             put!(
                 res,
-                "for {var_chunk_range} in {namespace_newlang}::range_chunks(0..{}.len(), {var_thr_pool}.size(), 64) {{\n",
+                "let mut {var_rxs} = Vec::with_capacity({var_thr_pool}.size());\n"
+            );
+
+            let var_chunk_size = get_static_var_hash("chunk_size");
+            put!(
+                res,
+                "let mut {var_chunk_size} = {}.len() / {var_thr_pool}.size() + 1;\n",
                 iter.to_rust()
             );
-            {
-                let var_iter_atom_ptr = get_static_var_hash("iter_atom_ptr");
-                put!(
-                    res,
-                    "let mut {var_iter_atom_ptr} = std::sync::atomic::AtomicPtr::new({}.as_mut_ptr());\n",
-                    iter.to_rust()
-                );
 
+            let var_chunks = get_static_var_hash("chunks");
+            put!(
+                res,
+                "let mut {var_chunks}: Vec<_> = {}.chunks_mut({var_chunk_size}).collect();\n",
+                iter.to_rust()
+            );
+
+            let var_chunk = get_static_var_hash("chunk");
+            put!(res, "for {var_chunk} in {var_chunks} {{\n");
+            {
                 put!(res, "{var_rxs}.push({var_thr_pool}.execute(move || {{\n");
                 {
-                    let var_iter_ptr = get_static_var_hash("iter_ptr");
                     put!(
                         res,
-                        "let {var_iter_ptr} = {var_iter_atom_ptr}.load(std::sync::atomic::Ordering::Relaxed);"
+                        "for {} in {var_chunk} {};",
+                        iter_item,
+                        iter_body.to_rust()
                     );
-
-                    let var_idx = get_static_var_hash("idx");
-                    put!(res, "for {var_idx} in {var_chunk_range} {{\n");
-                    {
-                        put!(
-                            res,
-                            "let {iter_item} = &mut *{var_iter_ptr}.add({var_idx});\n"
-                        );
-                        put!(res, "{}", iter_body.to_rust());
-                    }
-                    put!(res, "}}\n");
                 }
                 put!(res, "}}));\n");
             }
@@ -506,7 +507,7 @@ pub fn for_in_to_rust(
 
         put!(
             res,
-            "for {} in {} {}\n",
+            "for mut {} in {} {}\n",
             iter_item,
             iter.to_rust(),
             iter_body.to_rust()
