@@ -38,6 +38,28 @@ impl Worker {
     }
 }
 
+pub struct Scope<'a, R> {
+    thread_pool: &'a ThreadPool,
+    handles: Vec<mpsc::Receiver<R>>,
+}
+
+impl<'a, R: Send> Scope<'a, R> {
+    pub fn execute<F>(&mut self, f: F)
+    where
+        F: FnOnce() -> R + Send,
+    {
+        let handle = self.thread_pool.execute_scope(f);
+
+        self.handles.push(handle);
+    }
+
+    fn scope_end(&mut self) {
+        for handle in self.handles.drain(..) {
+            handle.recv().unwrap();
+        }
+    }
+}
+
 pub struct ThreadPool {
     workers: Vec<Worker>,
     sender: mpsc::Sender<Job>,
@@ -65,6 +87,25 @@ impl ThreadPool {
 
     pub fn execute<F, R>(&self, f: F) -> mpsc::Receiver<R>
     where
+        F: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        let (tx, rx) = mpsc::channel::<R>();
+
+        let closure: Box<dyn FnOnce() + Send> = Box::new(move || {
+            let result = f();
+            tx.send(result).unwrap();
+        });
+
+        self.sender
+            .send(closure)
+            .unwrap();
+
+        rx
+    }
+
+    fn execute_scope<F, R>(&self, f: F) -> mpsc::Receiver<R>
+    where
         F: FnOnce() -> R + Send,
         R: Send,
     {
@@ -82,6 +123,21 @@ impl ThreadPool {
 
         rx
     }
+
+    pub fn scope<F, R>(&self, f: F)
+    where
+        F: FnOnce(&mut Scope<R>) -> R + Send,
+        R: Send,
+    {
+        let mut scope = Scope {
+            thread_pool: &self,
+            handles: Vec::new(),
+        };
+
+        f(&mut scope);
+
+        scope.scope_end();
+    }
 }
 
 impl Drop for ThreadPool {
@@ -92,28 +148,5 @@ impl Drop for ThreadPool {
             }
         }
     }
-}
-
-pub fn range_chunks(range: Range<usize>, num_chunks: usize, min_size: usize) -> Vec<Range<usize>> {
-    let len = range.end - range.start;
-    if num_chunks == 0 || len == 0 {
-        return Vec::new();
-    }
-
-    let chunk_size = min_size.max(len / num_chunks);
-    let num_chunks = len / chunk_size;
-    let mut chunks = Vec::with_capacity(num_chunks);
-
-    let mut start = range.start;
-    while start+chunk_size < num_chunks*chunk_size {
-        let end = start + chunk_size;
-
-        chunks.push(start..end);
-        start = end;
-    }
-
-    chunks.push(start..range.end);
-
-    chunks
 }
 ";

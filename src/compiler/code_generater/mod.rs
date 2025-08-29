@@ -378,20 +378,15 @@ pub fn parallel_for_in_to_rust(
             panic!("");
         };
 
-        put!(res, "{{\n");
+        let var_thr_pool = get_static_var_hash("thr_pool");
+        put!(
+            res,
+            "let {var_thr_pool} = {namespace_newlang}::get_thread_pool();\n"
+        );
+
+        let var_s = get_static_var_hash("s");
+        put!(res, "{var_thr_pool}.scope(|{var_s}| {{\n");
         {
-            let var_thr_pool = get_static_var_hash("thr_pool");
-            put!(
-                res,
-                "let {var_thr_pool} = {namespace_newlang}::get_thread_pool();\n"
-            );
-
-            let var_rxs = get_static_var_hash("rxs");
-            put!(
-                res,
-                "let mut {var_rxs} = Vec::with_capacity({var_thr_pool}.size());\n"
-            );
-
             let var_chunk_size = get_static_var_hash("chunk_size");
             put!(
                 res,
@@ -409,7 +404,7 @@ pub fn parallel_for_in_to_rust(
             let var_chunk = get_static_var_hash("chunk");
             put!(res, "for {var_chunk} in {var_chunks} {{\n");
             {
-                put!(res, "{var_rxs}.push({var_thr_pool}.execute(move || {{\n");
+                put!(res, "{var_s}.execute(move || {{\n");
                 {
                     put!(
                         res,
@@ -418,16 +413,11 @@ pub fn parallel_for_in_to_rust(
                         iter_body.to_rust()
                     );
                 }
-                put!(res, "}}));\n");
+                put!(res, "}});\n");
             }
             put!(res, "}};\n");
-
-            put!(
-                res,
-                "{var_rxs}.into_iter().for_each(|rx| rx.recv().unwrap());\n"
-            );
         }
-        put!(res, "}}\n");
+        put!(res, "}});\n");
     };
 
     res
