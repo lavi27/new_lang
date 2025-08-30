@@ -1,15 +1,47 @@
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+fn mandelbrot(width: usize, height: usize, iterations: usize): Vec<u32> {
+    var pixels = Vec::with_capacity(width * height);
+    for i in 0..(width*height) {
+      pixels.push(0);
+    } 
+    
+    for y in 0..height {
+        for x in 0..width {
+            let mut zx = 0.0;
+            let mut zy = 0.0;
+            let cx = ((x as f64) / (width as f64)) * 3.5 - 2.5;
+            let cy = ((y as f64) / (height as f64)) * 2.0 - 1.0;
+            let mut iter = 0;
+            while (((zx * zx + zy * zy) < 4.0) && (iter < iterations)) {
+                let tmp = zx * zx - zy * zy + cx;
+                zy = 2.0 * zx * zy + cy;
+                zx = tmp;
+                iter += 1;
+            }
+            pixels[y * width + x] = iter as u32;
+        }
+    }
+    pixels
+}
 
 fn main() {
-  var vec = Vec::new();
-  for i in 0..1000000 {
-    vec.push(i);
+  var vec = Vec::with_capacity(1000);
+  for i in 0..vec.capacity() {
+    vec.push(i); 
   }
 
   let start = Instant::now();
-  for i in vec {
-    i += 1;
+
+  parallelFor i in vec {
+    *i = mandelbrot(600, 600, *i % 15 + 10)[0] as usize;
   }
 
+
+  // for i in &mut vec {
+  //     *i = mandelbrot(600, 600, *i % 15 + 10)[0] as usize;
+  // }
+
+  println!("{}", vec[1]); 
   println!("{:?}", start.elapsed()); 
 }

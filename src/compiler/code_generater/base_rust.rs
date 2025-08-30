@@ -149,4 +149,27 @@ impl Drop for ThreadPool {
         }
     }
 }
+
+pub fn range_chunks(range: Range<usize>, num_chunks: usize, min_size: usize) -> Vec<Range<usize>> {
+    let len = range.end - range.start;
+    if num_chunks == 0 || len == 0 {
+        return Vec::new();
+    }
+
+    let chunk_size = min_size.max(len / num_chunks);
+    let num_chunks = len / chunk_size;
+    let mut chunks = Vec::with_capacity(num_chunks);
+
+    let mut start = range.start;
+    while start + chunk_size < num_chunks * chunk_size {
+        let end = start + chunk_size;
+
+        chunks.push(start..end);
+        start = end;
+    }
+
+    chunks.push(start..range.end);
+
+    chunks
+}
 ";
