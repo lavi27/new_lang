@@ -46,6 +46,10 @@ pub enum Expr {
         iter_body: CodeBlock,
         remain_body: Option<CodeBlock>,
     },
+    While {
+        condition: ValueExpr,
+        body: CodeBlock,
+    },
     VariableLet {
         define_expr: VariableDefineExpr,
         value: ValueExpr,
@@ -82,13 +86,24 @@ pub enum ValueExpr {
     Div(Box<ValueExpr>, Box<ValueExpr>),
     LessThan(Box<ValueExpr>, Box<ValueExpr>),
     GreaterThan(Box<ValueExpr>, Box<ValueExpr>),
-    Reference(String),
-    Dereference(String),
+    Reference {
+        value: Box<ValueExpr>,
+        is_mut: bool,
+    },
+    Dereference(Box<ValueExpr>),
+    BoolAnd(Box<ValueExpr>, Box<ValueExpr>),
+    BoolOr(Box<ValueExpr>, Box<ValueExpr>),
+    BoolEqual(Box<ValueExpr>, Box<ValueExpr>),
+    BoolNotEqual(Box<ValueExpr>, Box<ValueExpr>),
     Tuple(Vec<ValueExpr>),
     Variable(String),
-    Indexing { 
+    Indexing {
         value: Box<ValueExpr>,
-        index: Box<ValueExpr>,   
+        index: Box<ValueExpr>,
+    },
+    As {
+        value: Box<ValueExpr>,
+        type_: Box<TypeExpr>,
     },
     Range {
         start: Box<ValueExpr>,
@@ -121,8 +136,11 @@ pub enum ValueExpr {
 
 #[derive(Clone)]
 pub enum VariableDefineExpr {
-    Name(String),
-    WithType(String, TypeExpr),
+    One {
+        is_mut: bool,
+        name: String,
+        type_: Option<TypeExpr>,
+    },
     TupleDestruct(Vec<VariableDefineExpr>),
 }
 

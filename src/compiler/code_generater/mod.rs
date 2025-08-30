@@ -121,6 +121,9 @@ impl ToRust for Expr {
                     format!("if {} {};", condition.to_rust(), if_body.to_rust())
                 }
             }
+            Self::While { condition, body } => {
+                format!("while {} {}", condition.to_rust(), body.to_rust())
+            }
             Self::ForIn {
                 iter_item,
                 iter,
@@ -183,9 +186,18 @@ impl ToRust for ValueExpr {
             Self::LessThan(lvel, rvel) => format!("{}<{}", lvel.to_rust(), rvel.to_rust()),
             Self::GreaterThan(lvel, rvel) => format!("{}>{}", lvel.to_rust(), rvel.to_rust()),
             Self::Tuple(exprs) => format!("({})", expr_vec_to_rust(exprs, ", ")),
+            Self::BoolAnd(lvel, rvel) => format!("{}&&{}", lvel.to_rust(), rvel.to_rust()),
+            Self::BoolOr(lvel, rvel) => format!("{}||{}", lvel.to_rust(), rvel.to_rust()),
+            Self::BoolEqual(lvel, rvel) => format!("{}=={}", lvel.to_rust(), rvel.to_rust()),
+            Self::BoolNotEqual(lvel, rvel) => format!("{}!={}", lvel.to_rust(), rvel.to_rust()),
             Self::Variable(var) => var.to_string(),
-            Self::Reference(expr) => format!("&{}", expr),
-            Self::Dereference(expr) => format!("*{}", expr),
+            Self::Reference { value, is_mut } => {
+                let mut_ = if *is_mut { "mut " } else { "" };
+
+                format!("&{mut_}{}", value.to_rust())
+            }
+            Self::Dereference(expr) => format!("*{}", expr.to_rust()),
+            Self::As { value, type_ } => format!("{} as {}", value.to_rust(), type_.to_rust()),
             Self::Indexing { value, index } => format!("{}[{}]", value.to_rust(), index.to_rust()),
             Self::Range {
                 start,
@@ -273,9 +285,21 @@ impl ToRust for ValueExpr {
 impl ToRust for VariableDefineExpr {
     fn to_rust(&self) -> String {
         match self {
-            Self::Name(name) => name.to_owned(),
-            Self::WithType(name, type_) => format!("{name}: {}", type_.to_rust()),
-            Self::TupleDestruct(items) => expr_vec_to_rust(items, ", "),
+            Self::One {
+                is_mut,
+                name,
+                type_,
+            } => {
+                let mut_ = if *is_mut { "mut " } else { "" };
+                let type_ = if let Some(type_) = type_ {
+                    format!(": {}", type_.to_rust())
+                } else {
+                    "".to_string()
+                };
+
+                format!("{mut_}{name}{type_}")
+            }
+            Self::TupleDestruct(items) => format!("({})", expr_vec_to_rust(items, ", ")),
         }
     }
 }
@@ -374,50 +398,43 @@ pub fn parallel_for_in_to_rust(
     if let ValueExpr::Tuple(items) = iter {
         todo!();
     } else {
-        let VariableDefineExpr::Name(iter_item) = iter_item else {
-            panic!("");
-        };
-
-        let var_thr_pool = get_static_var_hash("thr_pool");
-        put!(
-            res,
-            "let {var_thr_pool} = {namespace_newlang}::get_thread_pool();\n"
-        );
-
-        let var_s = get_static_var_hash("s");
-        put!(res, "{var_thr_pool}.scope(|{var_s}| {{\n");
+        put!(res, "unsafe {{\n");
         {
-            let var_chunk_size = get_static_var_hash("chunk_size");
+            let var_thr_pool = get_static_var_hash("thr_pool");
             put!(
                 res,
-                "let mut {var_chunk_size} = {}.len() / {var_thr_pool}.size() + 1;\n",
-                iter.to_rust()
+                "let {var_thr_pool} = {namespace_newlang}::get_thread_pool();\n"
             );
 
-            let var_chunks = get_static_var_hash("chunks");
-            put!(
-                res,
-                "let mut {var_chunks}: Vec<_> = {}.chunks_mut({var_chunk_size}).collect();\n",
-                iter.to_rust()
-            );
-
-            let var_chunk = get_static_var_hash("chunk");
-            put!(res, "for {var_chunk} in {var_chunks} {{\n");
+            let var_s = get_static_var_hash("s");
+            put!(res, "{var_thr_pool}.scope(|{var_s}| {{\n");
             {
-                put!(res, "{var_s}.execute(move || {{\n");
+                let var_range = get_static_var_hash("range");
+                put!(res, "for {var_range} in {namespace_newlang}::range_chunks(0..{}.len(), {var_thr_pool}.size(), 128) {{\n", iter.to_rust());
                 {
-                    put!(
-                        res,
-                        "for {} in {var_chunk} {};",
-                        iter_item,
-                        iter_body.to_rust()
-                    );
+                    let var_slice = get_static_var_hash("slice");
+                    put!(res, "let mut {var_slice} = std::mem::ManuallyDrop::new");
+                    put!(res, "(std::slice::from_raw_parts_mut({}.as_mut_ptr().add({var_range}.start), {var_range}.len()));\n", iter.to_rust());
+
+                    put!(res, "{var_s}.execute(move || {{\n");
+                    {
+                        let var_i = get_static_var_hash("i");
+                        put!(res, "for {var_i} in 0..{var_slice}.len() {{\n");
+                        put!(
+                            res,
+                            "let {} = &mut {var_slice}[{var_i}];\n",
+                            iter_item.to_rust()
+                        );
+                        put!(res, "{}", iter_body.to_rust());
+                        put!(res, "}}\n");
+                    }
+                    put!(res, "}});\n");
                 }
-                put!(res, "}});\n");
+                put!(res, "}};\n");
             }
-            put!(res, "}};\n");
+            put!(res, "}});\n");
         }
-        put!(res, "}});\n");
+        put!(res, "}}\n");
     };
 
     res
@@ -491,14 +508,10 @@ pub fn for_in_to_rust(
         }
         put!(res, "}}\n");
     } else {
-        let VariableDefineExpr::Name(iter_item) = iter_item else {
-            panic!("");
-        };
-
         put!(
             res,
-            "for mut {} in {} {}\n",
-            iter_item,
+            "for {} in {} {}\n",
+            iter_item.to_rust(),
             iter.to_rust(),
             iter_body.to_rust()
         );

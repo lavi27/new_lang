@@ -57,6 +57,8 @@ define_tokens! {
     Equal => "=",
     BoolEqual => "==",
     BoolNotEqual => "!=",
+    BoolAnd => "&&",
+    BoolOr => "||",
     Namespace => "::",
     AddAssign => "+=",
     SubAssign => "-=",

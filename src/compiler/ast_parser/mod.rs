@@ -6,7 +6,10 @@ use std::{
     panic::{self, AssertUnwindSafe},
 };
 
-use crate::{compiler::{code_generater::ToRust, exprs::*}, s};
+use crate::{
+    compiler::{code_generater::ToRust, exprs::*},
+    s,
+};
 
 use token_stream::*;
 
@@ -83,7 +86,10 @@ impl ASTParser {
     // self.token_stream을 직접 조작하는 저수준 매서드.
 
     fn assert_next_token(&mut self, token: Token) {
-        let curr_token = self.token_stream.next().expect("Expected '{token}'. But file is ended.");
+        let curr_token = self
+            .token_stream
+            .next()
+            .expect("Expected '{token}'. But file is ended.");
 
         if curr_token != token {
             panic!("Expected '{token}'. Found '{curr_token}'.");
@@ -91,7 +97,10 @@ impl ASTParser {
     }
 
     fn get_string_token(&mut self) -> String {
-        let curr_token = self.token_stream.next().expect("Expected some name. But file is ended.");
+        let curr_token = self
+            .token_stream
+            .next()
+            .expect("Expected some name. But file is ended.");
 
         let Token::String(str) = curr_token else {
             panic!("'{curr_token}' can't be included to some name.");
@@ -133,8 +142,10 @@ impl ASTParser {
             return items;
         }
 
-        let aaa = self.parse_value_expr();
-        items.push(aaa);
+        items.push(self.parse_value_expr());
+
+        println!("{}", end_token);
+        println!("{}", self.token_stream.peek().unwrap());
 
         while !self.is_next_token(end_token.clone()) {
             self.assert_next_token(Token::Comma);
@@ -165,10 +176,6 @@ impl ASTParser {
     fn parse_comma_type_exprs(&mut self, end_token: Token) -> Vec<TypeExpr> {
         let mut items = Vec::new();
 
-        if !self.is_next_token(end_token.clone()) {
-            return items;
-        }
-
         if self.is_next_token(end_token.clone()) {
             return items;
         }
@@ -186,18 +193,18 @@ impl ASTParser {
 
     fn parse_namespace_tree(&mut self) -> NamespaceTree {
         let mut body = vec![self.get_string_token()];
-        
+
         loop {
             if !self.is_next_token(Token::Namespace) {
                 return NamespaceTree(body, None);
             };
-            
+
             if self.is_next_token(Token::LeftBrace) {
                 break;
             };
 
             body.push(self.get_string_token());
-        };
+        }
 
         let mut tail = vec![self.parse_namespace_tree()];
         while self.is_next_token(Token::Comma) {
@@ -205,7 +212,7 @@ impl ASTParser {
         }
 
         self.assert_next_token(Token::RightBrace);
-        
+
         NamespaceTree(body, Some(tail))
     }
 
@@ -288,8 +295,13 @@ impl ASTParser {
                 break;
             };
             let priority = match infix_token {
-                Token::Plus | Token::Minus => 1,
-                Token::Asterisk | Token::Slash => 2,
+                Token::Plus | Token::Minus => 2,
+                Token::Asterisk | Token::Slash => 3,
+                Token::BoolAnd | Token::BoolOr => 0,
+                Token::BoolEqual
+                | Token::BoolNotEqual
+                | Token::LeftAngleBracket
+                | Token::RightAngleBracket => 1,
                 _ => break,
             };
             self.token_stream.next();
@@ -309,6 +321,24 @@ impl ASTParser {
                 Token::Minus => ValueExpr::Sub(Box::new(left_val.clone()), Box::new(right_val)),
                 Token::Asterisk => ValueExpr::Mul(Box::new(left_val.clone()), Box::new(right_val)),
                 Token::Slash => ValueExpr::Div(Box::new(left_val.clone()), Box::new(right_val)),
+                Token::BoolAnd => {
+                    ValueExpr::BoolAnd(Box::new(left_val.clone()), Box::new(right_val.clone()))
+                }
+                Token::BoolOr => {
+                    ValueExpr::BoolOr(Box::new(left_val.clone()), Box::new(right_val.clone()))
+                }
+                Token::BoolEqual => {
+                    ValueExpr::BoolEqual(Box::new(left_val.clone()), Box::new(right_val.clone()))
+                }
+                Token::BoolNotEqual => {
+                    ValueExpr::BoolNotEqual(Box::new(left_val.clone()), Box::new(right_val.clone()))
+                }
+                Token::LeftAngleBracket => {
+                    ValueExpr::GreaterThan(Box::new(left_val.clone()), Box::new(right_val.clone()))
+                }
+                Token::RightAngleBracket => {
+                    ValueExpr::LessThan(Box::new(left_val.clone()), Box::new(right_val.clone()))
+                }
                 _ => panic!("This compiler sucks."),
             });
         }
@@ -349,20 +379,19 @@ impl ASTParser {
         }
     }
 
-
     fn try_parse_indexing_chain(&mut self, value: ValueExpr) -> Option<ValueExpr> {
         if self.token_stream.peek() != Some(Token::LeftBracket) {
             return None;
         }
 
         let mut prev_expr = value;
-        
+
         while self.is_next_token(Token::LeftBracket) {
             let index = self.parse_value_expr();
 
             prev_expr = ValueExpr::Indexing {
                 value: Box::new(prev_expr),
-                index: Box::new(index)
+                index: Box::new(index),
             };
 
             self.assert_next_token(Token::RightBracket);
@@ -377,46 +406,31 @@ impl ASTParser {
                 self.token_stream.next();
                 let value = self.parse_value_expr();
 
-                Expr::EqualAssign {
-                    variable,
-                    value,
-                }
+                Expr::EqualAssign { variable, value }
             }
             Token::AddAssign => {
                 self.token_stream.next();
                 let value = self.parse_value_expr();
 
-                Expr::AddAssign {
-                    variable,
-                    value,
-                }
+                Expr::AddAssign { variable, value }
             }
             Token::SubAssign => {
                 self.token_stream.next();
                 let value = self.parse_value_expr();
-                
-                Expr::SubAssign {
-                    variable,
-                    value,
-                }
+
+                Expr::SubAssign { variable, value }
             }
             Token::MulAssign => {
                 self.token_stream.next();
                 let value = self.parse_value_expr();
-                
-                Expr::MulAssign {
-                    variable,
-                    value,
-                }
+
+                Expr::MulAssign { variable, value }
             }
             Token::DivAssign => {
                 self.token_stream.next();
                 let value = self.parse_value_expr();
-                
-                Expr::DivAssign {
-                    variable,
-                    value,
-                }
+
+                Expr::DivAssign { variable, value }
             }
             _ => {
                 return None;
@@ -431,16 +445,16 @@ impl ASTParser {
             return Some(ValueExpr::Range {
                 start: Box::new(start),
                 end: Box::new(end),
-                is_inclusive: false
-            })
+                is_inclusive: false,
+            });
         } else if self.is_next_token(Token::InclusiveRange) {
             let end = self.parse_value_expr();
-            
+
             return Some(ValueExpr::Range {
                 start: Box::new(start),
                 end: Box::new(end),
-                is_inclusive: true
-            })
+                is_inclusive: true,
+            });
         }
 
         None
@@ -480,15 +494,29 @@ impl ASTParser {
     }
 
     fn parse_variable_define_expr(&mut self) -> VariableDefineExpr {
-        let curr_token = self.token_stream.next().expect("Expected variable define expression. But file is ended.");
+        let curr_token = self
+            .token_stream
+            .next()
+            .expect("Expected variable define expression. But file is ended.");
 
-        if let Token::String(str) = curr_token {
-            if self.is_next_token(Token::Colon) {
-                let type_expr = self.parse_type_expr();
-                return VariableDefineExpr::WithType(str, type_expr);
+        if let Token::String(mut str) = curr_token {
+            let is_mut = str == "mut";
+
+            if is_mut {
+                str = self.get_string_token();
+            };
+
+            let type_ = if self.is_next_token(Token::Colon) {
+                Some(self.parse_type_expr())
             } else {
-                return VariableDefineExpr::Name(str);
-            }
+                None
+            };
+
+            return VariableDefineExpr::One {
+                name: str,
+                type_,
+                is_mut,
+            };
         } else if curr_token == Token::LeftParen {
             let items = self.parse_comma_define_exprs(Token::RightParen);
             return VariableDefineExpr::TupleDestruct(items);
@@ -498,7 +526,10 @@ impl ASTParser {
     }
 
     fn parse_value_expr(&mut self) -> ValueExpr {
-        let curr_token = self.token_stream.next().expect("Expected value expression. But File is ended.");
+        let curr_token = self
+            .token_stream
+            .next()
+            .expect("Expected value expression. But File is ended.");
 
         println!("value {}", curr_token);
 
@@ -513,7 +544,10 @@ impl ASTParser {
             }
             Token::Intager(int) => {
                 if self.is_next_token(Token::Period) {
-                    let token = self.token_stream.next().expect("Expected decimal places of float literal.");
+                    let token = self
+                        .token_stream
+                        .next()
+                        .expect("Expected decimal places of float literal.");
 
                     let Token::Intager(decimal_places) = token else {
                         panic!("Invalid decimal places of float literal.");
@@ -534,13 +568,17 @@ impl ASTParser {
                 ValueExpr::Tuple(items)
             }
             Token::Asterisk => {
-                let var = self.get_string_token();
-                // todo
-                ValueExpr::Dereference(var)
+                let var = self.parse_value_expr();
+                ValueExpr::Dereference(Box::new(var))
             }
             Token::Ampersand => {
-                let var = self.get_string_token();
-                ValueExpr::Reference(var)
+                let is_mut = self.is_next_token(Token::String(s!("mut")));
+                let var = self.parse_value_expr();
+
+                ValueExpr::Reference {
+                    value: Box::new(var),
+                    is_mut,
+                }
             }
             Token::String(str) => {
                 let (namespace, str) = self.try_parse_namespace(str.clone());
@@ -573,12 +611,24 @@ impl ASTParser {
         } else if let Some(range_expr) = self.try_parse_range_expr(result.clone()) {
             return range_expr;
         } else {
+            if self.is_next_token(Token::String("as".to_string())) {
+                let type_ = self.parse_type_expr();
+
+                return ValueExpr::As {
+                    value: Box::new(result),
+                    type_: Box::new(type_),
+                };
+            }
+
             return result;
         }
     }
 
     fn parse_codeline(&mut self) -> Expr {
-        let curr_token = self.token_stream.peek().expect("Expected code line. But file is ended.");
+        let curr_token = self
+            .token_stream
+            .peek()
+            .expect("Expected code line. But file is ended.");
 
         println!("line {}", curr_token);
 
@@ -598,6 +648,13 @@ impl ASTParser {
                         if_body,
                         else_body,
                     }
+                }
+                "while" => {
+                    self.token_stream.next();
+                    let condition = self.parse_value_expr();
+                    let body = self.parse_codeblock();
+
+                    Expr::While { condition, body }
                 }
                 "for" => {
                     self.token_stream.next();
@@ -699,12 +756,12 @@ impl ASTParser {
                 }
                 "use" => {
                     self.token_stream.next();
-                    
+
                     Expr::NamespaceUse(self.parse_namespace_tree())
                 }
                 _ => {
                     let var = self.parse_value_expr();
-                
+
                     let res = if let Some(infix_expr) = self.try_parse_infix_expr(var.clone()) {
                         infix_expr
                     } else {
@@ -727,8 +784,8 @@ impl ASTParser {
             }
             Token::Asterisk => {
                 self.token_stream.next();
-                let var = ValueExpr::Dereference(self.get_string_token());
-        
+                let var = ValueExpr::Dereference(Box::new(self.parse_value_expr()));
+
                 let res = if let Some(infix_expr) = self.try_parse_infix_expr(var.clone()) {
                     infix_expr
                 } else {
