@@ -21,15 +21,20 @@ pub struct Compiler {
     option: CompileOption,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct CompileOption {
     pub transfile: bool,
     pub run: bool,
+    pub profile: String,
 }
 
 impl Default for CompileOption {
     fn default() -> Self {
-        Self { transfile: false, run: false }
+        Self {
+            transfile: false,
+            run: false,
+            profile: String::new(),
+        }
     }
 }
 
@@ -84,12 +89,13 @@ impl Compiler {
         let mut stdout = std::io::BufWriter::new(stdout);
         stdout.write_all(output_code.as_bytes());
 
-
         if self.option.run {
             Command::new("cargo")
                 .arg("run")
                 .arg("--manifest-path")
                 .arg(self.outdir.clone() + "/Cargo.toml")
+                .arg("--profile")
+                .arg(self.option.profile.clone())
                 .spawn()
                 .expect("Error during cargo build.");
         } else if !self.option.transfile {
@@ -97,6 +103,8 @@ impl Compiler {
                 .arg("build")
                 .arg("--manifest-path")
                 .arg(self.outdir.clone() + "/Cargo.toml")
+                .arg("--profile")
+                .arg(self.option.profile.clone())
                 .spawn()
                 .expect("Error during cargo build.");
         }
@@ -116,6 +124,6 @@ impl Compiler {
             return Err(());
         };
 
-        Ok(CodeGenerater::generate_static(&ast, self.option))
+        Ok(CodeGenerater::generate_static(&ast, self.option.clone()))
     }
 }
