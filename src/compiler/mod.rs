@@ -119,7 +119,7 @@ impl Compiler {
     ) -> Result<(String, String), ()> {
         let ast = ASTParser::parse_static(filename.clone(), take(&mut input_code));
         let Ok(ast) = ast else {
-            unsafe { println!("{}", ast.unwrap_err_unchecked()) };
+            unsafe { eprintln!("{}", ast.unwrap_err_unchecked()) };
 
             return Err(());
         };

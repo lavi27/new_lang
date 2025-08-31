@@ -18,7 +18,7 @@ enum Commands {
     Build {
         file_path: String,
 
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "./out")]
         outdir: String,
         #[arg(short, long)]
         transfile: bool,
@@ -31,7 +31,7 @@ enum Commands {
     Run {
         file_path: String,
 
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "./out")]
         outdir: String,
 
         #[arg(long)]
