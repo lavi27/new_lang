@@ -51,7 +51,10 @@ impl ASTParser {
     }
 
     pub fn parse(&mut self) -> Result<AbstractSyntaxTree, String> {
-        // panic::set_hook(Box::new(|_| {}));
+        #[cfg(not(debug_assertions))]
+        {
+            panic::set_hook(Box::new(|_| {}));
+        }
 
         while self.token_stream.peek().is_some() {
             let line_res = panic::catch_unwind(AssertUnwindSafe(|| self.parse_codeline()));
@@ -59,7 +62,10 @@ impl ASTParser {
                 let (col, Range { start, end }) = self.token_stream.get_curr_position();
                 let err_msg = unsafe { line_res.unwrap_err_unchecked() };
 
-                panic::take_hook();
+                #[cfg(not(debug_assertions))]
+                {
+                    panic::take_hook();
+                }
 
                 let err_msg = if let Some(err_msg) = err_msg.downcast_ref::<String>() {
                     err_msg.to_string()
@@ -78,7 +84,10 @@ impl ASTParser {
             self.result.main_routine.push(line);
         }
 
-        panic::take_hook();
+        #[cfg(not(debug_assertions))]
+        {
+            panic::take_hook();
+        }
         return Ok(take(&mut self.result));
     }
 
@@ -103,7 +112,7 @@ impl ASTParser {
             .expect("Expected some name. But file is ended.");
 
         let Token::String(str) = curr_token else {
-            panic!("'{curr_token}' can't be included to some name.");
+            panic!("Expected some name. Found '{curr_token}'.");
         };
 
         return str;
@@ -142,14 +151,11 @@ impl ASTParser {
             return items;
         }
 
-        items.push(self.parse_value_expr());
-
-        println!("{}", end_token);
-        println!("{}", self.token_stream.peek().unwrap());
+        items.push(self.parse_value_exprs());
 
         while !self.is_next_token(end_token.clone()) {
             self.assert_next_token(Token::Comma);
-            items.push(self.parse_value_expr());
+            items.push(self.parse_value_exprs());
         }
 
         return items;
@@ -220,6 +226,80 @@ impl ASTParser {
     // 조건 검증과 처리를 동시에 수행하는 매서드들, 여러번 호출해도 무방한 것들. 인자 외에는 호출시 조건이 필요 없음.
     // if let Some(_) = ... 구조로 사용할 것.
 
+    fn try_parse_type_args(&mut self) -> Option<Vec<TypeExpr>> {
+        let restore_offset = self.token_stream.offset;
+
+        if !self.is_next_token(Token::LeftAngleBracket) {
+            return None;
+        };
+
+        let mut items = Vec::new();
+
+        if self.is_next_token(Token::RightAngleBracket) {
+            return Some(items);
+        }
+
+        let Some(type_expr) = self._try_parse_type_expr() else {
+            self.token_stream.restore(restore_offset);
+            return None;
+        };
+        items.push(type_expr);
+
+        while !self.is_next_token(Token::RightAngleBracket) {
+            if !self.is_next_token(Token::Comma) {
+                self.token_stream.restore(restore_offset);
+                return None;
+            }
+
+            let Some(type_expr) = self._try_parse_type_expr() else {
+                self.token_stream.restore(restore_offset);
+                return None;
+            };
+            items.push(type_expr);
+        }
+
+        return Some(items);
+    }
+
+    fn _try_parse_type_expr(&mut self) -> Option<TypeExpr> {
+        if self.is_next_token(Token::LeftParen) {
+            let mut items = Vec::new();
+
+            if self.is_next_token(Token::RightParen) {
+                return Some(TypeExpr::Tuple(items));
+            };
+
+            let Some(item) = self._try_parse_type_expr() else {
+                return None;
+            };
+            items.push(item);
+
+            while !self.is_next_token(Token::RightParen) {
+                if !self.is_next_token(Token::Comma) {
+                    return None;
+                }
+
+                let Some(item) = self._try_parse_type_expr() else {
+                    return None;
+                };
+                items.push(item);
+            }
+
+            return Some(TypeExpr::Tuple(items));
+        } else {
+            let str = self.token_stream.next().unwrap();
+            let Token::String(str) = str else {
+                return None;
+            };
+
+            if let Some(type_args) = self.try_parse_type_args() {
+                return Some(TypeExpr::WithArgs(str, type_args));
+            } else {
+                return Some(TypeExpr::Name(str));
+            };
+        }
+    }
+
     fn try_parse_namespace(&mut self, name: String) -> (NamespaceChain, String) {
         let mut items = vec![name];
 
@@ -237,9 +317,7 @@ impl ASTParser {
         fn_name: String,
         namespace: NamespaceChain,
     ) -> Option<ValueExpr> {
-        let type_args = self
-            .is_next_token(Token::LeftAngleBracket)
-            .then(|| self.parse_comma_type_exprs(Token::RightAngleBracket));
+        let type_args = self.try_parse_type_args();
 
         if (self.token_stream.peek() != Some(Token::LeftParen)) && type_args.is_none() {
             return None;
@@ -277,8 +355,23 @@ impl ASTParser {
     }
 
     fn try_parse_infix_value_exprs(&mut self, first: ValueExpr) -> Option<ValueExpr> {
+        let Some(infix_token) = self.token_stream.peek() else {
+            return None;
+        };
+        match infix_token {
+            Token::Plus | Token::Minus => 2,
+            Token::Asterisk | Token::Slash | Token::Percent => 3,
+            Token::BoolAnd | Token::BoolOr => 0,
+            Token::BoolEqual
+            | Token::BoolNotEqual
+            | Token::LeftAngleBracket
+            | Token::RightAngleBracket => 1,
+            Token::String(_) => 4,
+            _ => return None,
+        };
+
         #[allow(deprecated)]
-        self._try_parse_infix_value_exprs_recursive(first, 0)
+        Some(self._try_parse_infix_value_exprs_recursive(first, 0))
     }
 
     #[deprecated(note = "This function should not be called directly")]
@@ -286,149 +379,156 @@ impl ASTParser {
         &mut self,
         left_val: ValueExpr,
         min_priority: usize,
-    ) -> Option<ValueExpr> {
-        let mut result = None;
+    ) -> ValueExpr {
+        let mut result = left_val.clone();
 
         loop {
-            // .expect() 단축 가능
             let Some(infix_token) = self.token_stream.peek() else {
                 break;
             };
             let priority = match infix_token {
                 Token::Plus | Token::Minus => 2,
-                Token::Asterisk | Token::Slash => 3,
+                Token::Asterisk | Token::Slash | Token::Percent => 3,
                 Token::BoolAnd | Token::BoolOr => 0,
                 Token::BoolEqual
                 | Token::BoolNotEqual
                 | Token::LeftAngleBracket
                 | Token::RightAngleBracket => 1,
+                Token::String(_) => 4,
                 _ => break,
             };
-            self.token_stream.next();
 
             if priority < min_priority {
                 break;
             }
 
-            let right_val = self.parse_value_expr();
+            self.token_stream.next();
 
-            let right_val = self
-                ._try_parse_infix_value_exprs_recursive(right_val.clone(), priority)
-                .unwrap_or(right_val);
+            if let Token::String(string) = infix_token {
+                if string == "as" {
+                    result = ValueExpr::As {
+                        value: Box::new(left_val.clone()),
+                        type_: Box::new(self.parse_type_expr()),
+                    };
 
-            result = Some(match infix_token {
-                Token::Plus => ValueExpr::Add(Box::new(left_val.clone()), Box::new(right_val)),
-                Token::Minus => ValueExpr::Sub(Box::new(left_val.clone()), Box::new(right_val)),
-                Token::Asterisk => ValueExpr::Mul(Box::new(left_val.clone()), Box::new(right_val)),
-                Token::Slash => ValueExpr::Div(Box::new(left_val.clone()), Box::new(right_val)),
+                    continue;
+                } else {
+                    panic!("Expected some infix value expression. Found '{string}'.");
+                }
+            };
+
+            let right_val = self.parse_single_value_expr();
+
+            let right_val =
+                self._try_parse_infix_value_exprs_recursive(right_val.clone(), priority);
+
+            result = match infix_token {
+                Token::Plus => ValueExpr::Add(Box::new(result.clone()), Box::new(right_val)),
+                Token::Minus => ValueExpr::Sub(Box::new(result.clone()), Box::new(right_val)),
+                Token::Asterisk => ValueExpr::Mul(Box::new(result.clone()), Box::new(right_val)),
+                Token::Slash => ValueExpr::Div(Box::new(result.clone()), Box::new(right_val)),
+                Token::Percent => {
+                    ValueExpr::Remainder(Box::new(result.clone()), Box::new(right_val))
+                }
                 Token::BoolAnd => {
-                    ValueExpr::BoolAnd(Box::new(left_val.clone()), Box::new(right_val.clone()))
+                    ValueExpr::BoolAnd(Box::new(result.clone()), Box::new(right_val.clone()))
                 }
                 Token::BoolOr => {
-                    ValueExpr::BoolOr(Box::new(left_val.clone()), Box::new(right_val.clone()))
+                    ValueExpr::BoolOr(Box::new(result.clone()), Box::new(right_val.clone()))
                 }
                 Token::BoolEqual => {
-                    ValueExpr::BoolEqual(Box::new(left_val.clone()), Box::new(right_val.clone()))
+                    ValueExpr::BoolEqual(Box::new(result.clone()), Box::new(right_val.clone()))
                 }
                 Token::BoolNotEqual => {
-                    ValueExpr::BoolNotEqual(Box::new(left_val.clone()), Box::new(right_val.clone()))
+                    ValueExpr::BoolNotEqual(Box::new(result.clone()), Box::new(right_val.clone()))
                 }
                 Token::LeftAngleBracket => {
-                    ValueExpr::GreaterThan(Box::new(left_val.clone()), Box::new(right_val.clone()))
+                    ValueExpr::GreaterThan(Box::new(result.clone()), Box::new(right_val.clone()))
                 }
                 Token::RightAngleBracket => {
-                    ValueExpr::LessThan(Box::new(left_val.clone()), Box::new(right_val.clone()))
+                    ValueExpr::LessThan(Box::new(result.clone()), Box::new(right_val.clone()))
                 }
                 _ => panic!("This compiler sucks."),
-            });
+            };
         }
 
         result
     }
 
-    fn try_parse_object_chain(&mut self, first: ValueExpr) -> Option<ValueExpr> {
-        let mut chain = vec![first.clone()];
-
-        while self.is_next_token(Token::Period) {
-            let token = self.get_string_token();
-
-            let expr = if let Some(ValueExpr::FnCall {
-                name,
-                type_args,
-                args,
-                ..
-            }) = self.try_parse_fn_call(token.clone(), NamespaceChain::new())
-            {
-                ValueExpr::FnCall {
-                    namespace: NamespaceChain(Vec::new()),
-                    name,
-                    type_args,
-                    args,
-                }
-            } else {
-                ValueExpr::Variable(token)
-            };
-
-            chain.push(expr.clone());
-        }
-
-        if chain.len() > 1 {
-            Some(ValueExpr::ObjectChain(chain))
-        } else {
-            None
-        }
-    }
-
-    fn try_parse_indexing_chain(&mut self, value: ValueExpr) -> Option<ValueExpr> {
-        if self.token_stream.peek() != Some(Token::LeftBracket) {
+    fn try_parse_field_or_method(&mut self, first: ValueExpr) -> Option<ValueExpr> {
+        if !self.is_next_token(Token::Period) {
             return None;
         }
 
-        let mut prev_expr = value;
+        let token = self.get_string_token();
 
-        while self.is_next_token(Token::LeftBracket) {
-            let index = self.parse_value_expr();
+        let expr = if let Some(ValueExpr::FnCall {
+            name,
+            type_args,
+            args,
+            ..
+        }) = self.try_parse_fn_call(token.clone(), NamespaceChain::new())
+        {
+            ValueExpr::MethodCall {
+                object: Box::new(first),
+                method: name,
+                type_args,
+                args,
+            }
+        } else {
+            ValueExpr::ObjectField {
+                objcet: Box::new(first),
+                field: self.get_string_token(),
+            }
+        };
 
-            prev_expr = ValueExpr::Indexing {
-                value: Box::new(prev_expr),
-                index: Box::new(index),
-            };
+        Some(expr)
+    }
 
-            self.assert_next_token(Token::RightBracket);
+    fn try_parse_indexing(&mut self, value: ValueExpr) -> Option<ValueExpr> {
+        if !self.is_next_token(Token::LeftBracket) {
+            return None;
         }
 
-        Some(prev_expr)
+        let result = ValueExpr::Indexing {
+            value: Box::new(value),
+            index: Box::new(self.parse_value_exprs()),
+        };
+
+        self.assert_next_token(Token::RightBracket);
+
+        Some(result)
     }
 
     fn try_parse_infix_expr(&mut self, variable: ValueExpr) -> Option<Expr> {
         Some(match self.token_stream.peek().unwrap() {
             Token::Equal => {
                 self.token_stream.next();
-                let value = self.parse_value_expr();
+                let value = self.parse_value_exprs();
 
                 Expr::EqualAssign { variable, value }
             }
             Token::AddAssign => {
                 self.token_stream.next();
-                let value = self.parse_value_expr();
+                let value = self.parse_value_exprs();
 
                 Expr::AddAssign { variable, value }
             }
             Token::SubAssign => {
                 self.token_stream.next();
-                let value = self.parse_value_expr();
+                let value = self.parse_value_exprs();
 
                 Expr::SubAssign { variable, value }
             }
             Token::MulAssign => {
                 self.token_stream.next();
-                let value = self.parse_value_expr();
+                let value = self.parse_value_exprs();
 
                 Expr::MulAssign { variable, value }
             }
             Token::DivAssign => {
                 self.token_stream.next();
-                let value = self.parse_value_expr();
+                let value = self.parse_value_exprs();
 
                 Expr::DivAssign { variable, value }
             }
@@ -440,7 +540,7 @@ impl ASTParser {
 
     fn try_parse_range_expr(&mut self, start: ValueExpr) -> Option<ValueExpr> {
         if self.is_next_token(Token::Range) {
-            let end = self.parse_value_expr();
+            let end = self.parse_single_value_expr();
 
             return Some(ValueExpr::Range {
                 start: Box::new(start),
@@ -448,7 +548,7 @@ impl ASTParser {
                 is_inclusive: false,
             });
         } else if self.is_next_token(Token::InclusiveRange) {
-            let end = self.parse_value_expr();
+            let end = self.parse_single_value_expr();
 
             return Some(ValueExpr::Range {
                 start: Box::new(start),
@@ -483,9 +583,7 @@ impl ASTParser {
         } else {
             let str = self.get_string_token();
 
-            if self.is_next_token(Token::LeftAngleBracket) {
-                let type_args = self.parse_comma_type_exprs(Token::RightAngleBracket);
-
+            if let Some(type_args) = self.try_parse_type_args() {
                 return TypeExpr::WithArgs(str, type_args);
             } else {
                 return TypeExpr::Name(str);
@@ -525,13 +623,23 @@ impl ASTParser {
         }
     }
 
-    fn parse_value_expr(&mut self) -> ValueExpr {
+    fn parse_value_exprs(&mut self) -> ValueExpr {
+        let single = self.parse_single_value_expr();
+
+        self.try_parse_infix_value_exprs(single.clone())
+            .unwrap_or(single)
+    }
+
+    fn parse_single_value_expr(&mut self) -> ValueExpr {
         let curr_token = self
             .token_stream
             .next()
             .expect("Expected value expression. But File is ended.");
 
-        println!("value {}", curr_token);
+        #[cfg(debug_assertions)]
+        {
+            eprintln!("value {}", curr_token);
+        }
 
         let result = match curr_token {
             Token::DoubleQuote => {
@@ -568,12 +676,12 @@ impl ASTParser {
                 ValueExpr::Tuple(items)
             }
             Token::Asterisk => {
-                let var = self.parse_value_expr();
+                let var = self.parse_single_value_expr();
                 ValueExpr::Dereference(Box::new(var))
             }
             Token::Ampersand => {
                 let is_mut = self.is_next_token(Token::String(s!("mut")));
-                let var = self.parse_value_expr();
+                let var = self.parse_single_value_expr();
 
                 ValueExpr::Reference {
                     value: Box::new(var),
@@ -587,10 +695,6 @@ impl ASTParser {
                     macro_expr
                 } else if let Some(fn_expr) = self.try_parse_fn_call(str.clone(), namespace) {
                     fn_expr
-                } else if let Some(chain_expr) =
-                    self.try_parse_object_chain(ValueExpr::Variable(str.clone()))
-                {
-                    chain_expr
                 } else {
                     ValueExpr::Variable(str)
                 }
@@ -600,27 +704,18 @@ impl ASTParser {
             }
         };
 
-        // 서로 다른 표현식이 교자하면 못쓰는 로직.
+        let mut prev = result;
 
-        if let Some(chain_expr) = self.try_parse_object_chain(result.clone()) {
-            return chain_expr;
-        } else if let Some(infix_expr) = self.try_parse_infix_value_exprs(result.clone()) {
-            return infix_expr;
-        } else if let Some(index_expr) = self.try_parse_indexing_chain(result.clone()) {
-            return index_expr;
-        } else if let Some(range_expr) = self.try_parse_range_expr(result.clone()) {
-            return range_expr;
-        } else {
-            if self.is_next_token(Token::String("as".to_string())) {
-                let type_ = self.parse_type_expr();
-
-                return ValueExpr::As {
-                    value: Box::new(result),
-                    type_: Box::new(type_),
-                };
+        loop {
+            if let Some(chain_expr) = self.try_parse_field_or_method(prev.clone()) {
+                prev = chain_expr;
+            } else if let Some(index_expr) = self.try_parse_indexing(prev.clone()) {
+                prev = index_expr;
+            } else if let Some(range_expr) = self.try_parse_range_expr(prev.clone()) {
+                prev = range_expr;
+            } else {
+                return prev;
             }
-
-            return result;
         }
     }
 
@@ -630,13 +725,16 @@ impl ASTParser {
             .peek()
             .expect("Expected code line. But file is ended.");
 
-        println!("line {}", curr_token);
+        #[cfg(debug_assertions)]
+        {
+            eprintln!("line {}", curr_token);
+        }
 
         match curr_token {
             Token::String(str) => match str.as_str() {
                 "if" => {
                     self.token_stream.next();
-                    let condition = self.parse_value_expr();
+                    let condition = self.parse_value_exprs();
                     let if_body = self.parse_codeblock();
 
                     let else_body = self
@@ -651,7 +749,7 @@ impl ASTParser {
                 }
                 "while" => {
                     self.token_stream.next();
-                    let condition = self.parse_value_expr();
+                    let condition = self.parse_value_exprs();
                     let body = self.parse_codeblock();
 
                     Expr::While { condition, body }
@@ -662,7 +760,7 @@ impl ASTParser {
 
                     self.assert_next_token(Token::String(s!("in")));
 
-                    let iter = self.parse_value_expr();
+                    let iter = self.parse_single_value_expr();
                     let iter_body = self.parse_codeblock();
 
                     let remain_body = self
@@ -684,7 +782,7 @@ impl ASTParser {
 
                     self.assert_next_token(Token::String(s!("in")));
 
-                    let iter = self.parse_value_expr();
+                    let iter = self.parse_single_value_expr();
                     let iter_body = self.parse_codeblock();
 
                     let remain_body = self
@@ -704,7 +802,7 @@ impl ASTParser {
 
                     self.assert_next_token(Token::Equal);
 
-                    let value = self.parse_value_expr();
+                    let value = self.parse_value_exprs();
                     self.assert_next_token(Token::Semicolon);
 
                     Expr::VariableLet { define_expr, value }
@@ -714,7 +812,7 @@ impl ASTParser {
                     let define_expr = self.parse_variable_define_expr();
                     self.assert_next_token(Token::Equal);
 
-                    let value = self.parse_value_expr();
+                    let value = self.parse_value_exprs();
                     self.assert_next_token(Token::Semicolon);
 
                     Expr::VariableVar { define_expr, value }
@@ -723,9 +821,7 @@ impl ASTParser {
                     self.token_stream.next();
                     let name = self.get_string_token();
 
-                    let type_args = self
-                        .is_next_token(Token::LeftAngleBracket)
-                        .then(|| self.parse_comma_type_exprs(Token::RightAngleBracket));
+                    let type_args = self.try_parse_type_args();
 
                     self.assert_next_token(Token::LeftParen);
                     let args = self.parse_comma_define_exprs(Token::RightParen);
@@ -748,7 +844,7 @@ impl ASTParser {
                 }
                 "return" => {
                     self.token_stream.next();
-                    let value = self.parse_value_expr();
+                    let value = self.parse_value_exprs();
 
                     self.assert_next_token(Token::Semicolon);
 
@@ -760,17 +856,17 @@ impl ASTParser {
                     Expr::NamespaceUse(self.parse_namespace_tree())
                 }
                 _ => {
-                    let var = self.parse_value_expr();
+                    let var = self.parse_value_exprs();
 
-                    let res = if let Some(infix_expr) = self.try_parse_infix_expr(var.clone()) {
-                        infix_expr
+                    let res = self
+                        .try_parse_infix_expr(var.clone())
+                        .unwrap_or(Expr::ValueExpr(var));
+
+                    if self.is_next_token(Token::Semicolon) {
+                        res
                     } else {
-                        Expr::ValueExpr(var)
-                    };
-
-                    self.assert_next_token(Token::Semicolon);
-
-                    res
+                        Expr::ReturnExpr(Box::new(res))
+                    }
                 }
             },
             Token::Semicolon => {
@@ -784,13 +880,11 @@ impl ASTParser {
             }
             Token::Asterisk => {
                 self.token_stream.next();
-                let var = ValueExpr::Dereference(Box::new(self.parse_value_expr()));
+                let var = ValueExpr::Dereference(Box::new(self.parse_single_value_expr()));
 
-                let res = if let Some(infix_expr) = self.try_parse_infix_expr(var.clone()) {
-                    infix_expr
-                } else {
-                    Expr::ValueExpr(var)
-                };
+                let res = self
+                    .try_parse_infix_expr(var.clone())
+                    .unwrap_or(Expr::ValueExpr(var));
 
                 self.assert_next_token(Token::Semicolon);
 

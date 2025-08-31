@@ -66,6 +66,7 @@ pub enum Expr {
         body: CodeBlock,
     },
     Return(ValueExpr),
+    ReturnExpr(Box<Expr>),
     ValueExpr(ValueExpr),
     CodeBlock(CodeBlock),
     VariableDefineExpr(VariableDefineExpr),
@@ -84,6 +85,7 @@ pub enum ValueExpr {
     Sub(Box<ValueExpr>, Box<ValueExpr>),
     Mul(Box<ValueExpr>, Box<ValueExpr>),
     Div(Box<ValueExpr>, Box<ValueExpr>),
+    Remainder(Box<ValueExpr>, Box<ValueExpr>),
     LessThan(Box<ValueExpr>, Box<ValueExpr>),
     GreaterThan(Box<ValueExpr>, Box<ValueExpr>),
     Reference {
@@ -116,7 +118,6 @@ pub enum ValueExpr {
         type_args: Option<Vec<TypeExpr>>,
         args: Vec<ValueExpr>,
     },
-    ObjectChain(Vec<ValueExpr>),
     ObjectField {
         objcet: Box<ValueExpr>,
         field: String,

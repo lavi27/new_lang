@@ -54,6 +54,7 @@ define_tokens! {
     Asterisk => "*",
     Plus => "+",
     Minus => "-",
+    Percent => "%",
     Equal => "=",
     BoolEqual => "==",
     BoolNotEqual => "!=",
@@ -102,7 +103,7 @@ use TokenType as TT;
 
 pub struct TokenStream {
     raw: Vec<u8>,
-    offset: usize,
+    pub offset: usize,
     token_start: usize,
 
     token_state: TokenType,
@@ -110,7 +111,7 @@ pub struct TokenStream {
     curr_row: usize,
     curr_col_range: Range<usize>,
 
-    peek_cache: VecDeque<(Token, usize)>,
+    state_cache: VecDeque<(Token, usize)>,
 }
 
 impl TokenStream {
@@ -118,13 +119,20 @@ impl TokenStream {
         Self {
             raw: str.into_bytes(),
             offset: 0,
+            token_start: 0,
+
             curr_row: 1,
+            row_start_offset: 0,
             token_state: TT::None,
             curr_col_range: Range { start: 1, end: 1 },
-            peek_cache: VecDeque::with_capacity(8),
-            token_start: 0,
-            row_start_offset: 0,
+
+            state_cache: VecDeque::with_capacity(8),
         }
+    }
+
+    pub fn restore(&mut self, offset: usize) {
+        self.state_cache.clear();
+        self.offset = offset;
     }
 
     pub fn peek(&mut self) -> Option<Token> {
@@ -138,20 +146,20 @@ impl TokenStream {
 
         let mut res = None;
 
-        if let Some((token, _)) = self.peek_cache.get(n) {
+        if let Some((token, _)) = self.state_cache.get(n) {
             return Some(token.clone());
         }
 
-        if let Some((token, offset)) = self.peek_cache.back() {
+        if let Some((token, offset)) = self.state_cache.back() {
             self.offset = *offset;
             res = Some(token.clone());
         }
 
-        for _ in self.peek_cache.len()..=n {
+        for _ in self.state_cache.len()..=n {
             res = self.next_inner();
 
             if let Some(res) = res.clone() {
-                self.peek_cache.push_back((res, self.offset));
+                self.state_cache.push_back((res, self.offset));
             } else {
                 break;
             }
@@ -291,7 +299,7 @@ impl Iterator for TokenStream {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some((token, offset)) = self.peek_cache.pop_front() {
+        if let Some((token, offset)) = self.state_cache.pop_front() {
             self.offset = offset;
             return Some(token);
         };

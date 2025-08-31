@@ -169,6 +169,7 @@ impl ToRust for Expr {
                 }
             }
             Self::Return(expr) => format!("return {};", expr.to_rust()),
+            Self::ReturnExpr(expr) => format!("return {}", expr.to_rust()),
         }
     }
 }
@@ -177,12 +178,21 @@ impl ToRust for ValueExpr {
     fn to_rust(&self) -> String {
         match self {
             Self::IntagerLiteral(int) => int.to_string(),
-            Self::FloatLiteral(float) => float.to_string(),
+            Self::FloatLiteral(float) => {
+                let mut to_str = float.to_string();
+
+                if !to_str.contains(".") {
+                    to_str += ".0";
+                };
+
+                to_str
+            }
             Self::StringLiteral(str) => format!("\"{}\"", str.to_owned()),
             Self::Add(lvel, rvel) => format!("{}+{}", lvel.to_rust(), rvel.to_rust()),
             Self::Sub(lvel, rvel) => format!("{}-{}", lvel.to_rust(), rvel.to_rust()),
             Self::Mul(lvel, rvel) => format!("{}*{}", lvel.to_rust(), rvel.to_rust()),
             Self::Div(lvel, rvel) => format!("{}/{}", lvel.to_rust(), rvel.to_rust()),
+            Self::Remainder(lvel, rvel) => format!("{}%{}", lvel.to_rust(), rvel.to_rust()),
             Self::LessThan(lvel, rvel) => format!("{}<{}", lvel.to_rust(), rvel.to_rust()),
             Self::GreaterThan(lvel, rvel) => format!("{}>{}", lvel.to_rust(), rvel.to_rust()),
             Self::Tuple(exprs) => format!("({})", expr_vec_to_rust(exprs, ", ")),
@@ -239,7 +249,6 @@ impl ToRust for ValueExpr {
                     )
                 }
             }
-            Self::ObjectChain(value_exprs) => expr_vec_to_rust(value_exprs, "."),
             Self::ObjectField { objcet, field } => {
                 format!("{}.{}", objcet.to_rust(), field.to_owned())
             }
