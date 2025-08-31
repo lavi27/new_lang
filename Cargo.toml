@@ -10,5 +10,9 @@ strum = "0.27.2"
 strum_macros = "0.27.2"
 trie-rs = "0.4.2"
 
+[profile.dev]
+opt-level = 0
+debug = true
+
 [profile.release]
 opt-level = 3
