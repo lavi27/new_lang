@@ -415,11 +415,17 @@ pub fn parallel_for_in_to_rust(
                 "let {var_thr_pool} = {namespace_newlang}::get_thread_pool();\n"
             );
 
+            let var_range_chunks = get_static_var_hash("range_chunks");
+            put!(
+                res,
+                "let {var_range_chunks} = {namespace_newlang}::range_chunks(0..{}.len(), {var_thr_pool}.size(), 128);\n", iter.to_rust()
+            );
+
             let var_s = get_static_var_hash("s");
             put!(res, "{var_thr_pool}.scope(|{var_s}| {{\n");
             {
                 let var_range = get_static_var_hash("range");
-                put!(res, "for {var_range} in {namespace_newlang}::range_chunks(0..{}.len(), {var_thr_pool}.size(), 128) {{\n", iter.to_rust());
+                put!(res, "for {var_range} in {var_range_chunks} {{\n");
                 {
                     let var_slice = get_static_var_hash("slice");
                     put!(res, "let mut {var_slice} = std::mem::ManuallyDrop::new");
