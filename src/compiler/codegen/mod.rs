@@ -5,7 +5,7 @@ use std::hash::{BuildHasher, Hasher};
 use std::sync::LazyLock;
 
 use crate::{
-    compiler::{ast_parser::*, exprs::*, CompileOption},
+    compiler::{exprs::*, parser::*, CompileOption},
     s,
 };
 
@@ -21,20 +21,20 @@ pub fn get_static_var_hash(name: &str) -> String {
     format!("_{}_{:016x}", name, hash)
 }
 
-pub struct CodeGenerater<'a> {
-    ast: &'a AbstractSyntaxTree,
+pub struct Codegen<'a> {
+    ast: &'a SyntaxTree,
     option: CompileOption,
     result: String,
     // static_var_hasher: FxHasher,
 }
 
-impl<'a> CodeGenerater<'a> {
-    pub fn generate_static(ast: &'a AbstractSyntaxTree, opt: CompileOption) -> (String, String) {
-        let mut generater = Self::new(ast, opt);
-        generater.generate_rust()
+impl<'a> Codegen<'a> {
+    pub fn generate_static(ast: &'a SyntaxTree, opt: CompileOption) -> (String, String) {
+        let mut codegen = Self::new(ast, opt);
+        codegen.generate_rust()
     }
 
-    pub fn new(ast: &'a AbstractSyntaxTree, option: CompileOption) -> Self {
+    pub fn new(ast: &'a SyntaxTree, option: CompileOption) -> Self {
         Self {
             ast,
             option,
@@ -79,7 +79,7 @@ pub trait ToRust {
     fn to_rust(&self) -> String;
 }
 
-// move logic to CodeGen. Implement Visitor.
+// Implement Visitor.
 impl ToRust for Expr {
     fn to_rust(&self) -> String {
         match self {
@@ -130,12 +130,6 @@ impl ToRust for Expr {
                 iter_body,
                 remain_body,
             } => for_in_to_rust(iter_item, iter, iter_body, remain_body),
-            Self::ParallelForIn {
-                iter_item,
-                iter,
-                iter_body,
-                remain_body,
-            } => parallel_for_in_to_rust(iter_item, iter, iter_body, remain_body),
             Self::VariableLet { define_expr, value } => {
                 format!("let {} = {};", define_expr.to_rust(), value.to_rust())
             }
@@ -383,7 +377,7 @@ impl ToRust for CodeBlock {
     }
 }
 
-impl ToRust for AbstractSyntaxTree {
+impl ToRust for SyntaxTree {
     fn to_rust(&self) -> String {
         expr_vec_to_rust(&self.main_routine, "\n")
     }

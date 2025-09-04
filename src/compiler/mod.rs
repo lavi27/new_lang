@@ -1,5 +1,6 @@
-mod ast_parser;
-mod code_generater;
+mod analyzer;
+mod codegen;
+mod parser;
 #[macro_use]
 mod utils;
 mod exprs;
@@ -12,8 +13,8 @@ use std::{
     path::Path,
 };
 
-use ast_parser::*;
-use code_generater::*;
+use codegen::*;
+use parser::*;
 
 pub struct Compiler {
     path: String,
@@ -117,13 +118,13 @@ impl Compiler {
         mut input_code: String,
         filename: String,
     ) -> Result<(String, String), ()> {
-        let ast = ASTParser::parse_static(filename.clone(), take(&mut input_code));
+        let ast = Parser::parse_static(filename.clone(), take(&mut input_code));
         let Ok(ast) = ast else {
             unsafe { eprintln!("{}", ast.unwrap_err_unchecked()) };
 
             return Err(());
         };
 
-        Ok(CodeGenerater::generate_static(&ast, self.option.clone()))
+        Ok(Codegen::generate_static(&ast, self.option.clone()))
     }
 }

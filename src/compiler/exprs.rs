@@ -34,12 +34,6 @@ pub enum Expr {
         if_body: CodeBlock,
         else_body: Option<CodeBlock>,
     },
-    ParallelForIn {
-        iter_item: VariableDefineExpr,
-        iter: ValueExpr,
-        iter_body: CodeBlock,
-        remain_body: Option<CodeBlock>,
-    },
     ForIn {
         iter_item: VariableDefineExpr,
         iter: ValueExpr,

@@ -7,18 +7,18 @@ use std::{
 };
 
 use crate::{
-    compiler::{code_generater::ToRust, exprs::*},
+    compiler::{codegen::ToRust, exprs::*},
     s,
 };
 
 use token_stream::*;
 
-pub struct AbstractSyntaxTree {
+pub struct SyntaxTree {
     pub main_routine: Vec<Expr>,
     pub is_threading_used: bool,
 }
 
-impl Default for AbstractSyntaxTree {
+impl Default for SyntaxTree {
     fn default() -> Self {
         Self {
             main_routine: Vec::new(),
@@ -27,17 +27,14 @@ impl Default for AbstractSyntaxTree {
     }
 }
 
-pub struct ASTParser {
+pub struct Parser {
     token_stream: TokenStream,
     filename: String,
-    result: AbstractSyntaxTree,
+    result: SyntaxTree,
 }
 
-impl ASTParser {
-    pub fn parse_static(
-        filename: String,
-        input_code: String,
-    ) -> Result<AbstractSyntaxTree, String> {
+impl Parser {
+    pub fn parse_static(filename: String, input_code: String) -> Result<SyntaxTree, String> {
         let mut parser = Self::new(filename, input_code);
         parser.parse()
     }
@@ -46,11 +43,11 @@ impl ASTParser {
         Self {
             token_stream: TokenStream::from(input_code),
             filename,
-            result: AbstractSyntaxTree::default(),
+            result: SyntaxTree::default(),
         }
     }
 
-    pub fn parse(&mut self) -> Result<AbstractSyntaxTree, String> {
+    pub fn parse(&mut self) -> Result<SyntaxTree, String> {
         #[cfg(not(debug_assertions))]
         {
             panic::set_hook(Box::new(|_| {}));
@@ -768,28 +765,6 @@ impl ASTParser {
                         .then(|| self.parse_codeblock());
 
                     Expr::ForIn {
-                        iter_item,
-                        iter,
-                        iter_body,
-                        remain_body,
-                    }
-                }
-                "parallelFor" => {
-                    self.token_stream.next();
-                    self.result.is_threading_used = true;
-
-                    let iter_item = self.parse_variable_define_expr();
-
-                    self.assert_next_token(Token::String(s!("in")));
-
-                    let iter = self.parse_single_value_expr();
-                    let iter_body = self.parse_codeblock();
-
-                    let remain_body = self
-                        .is_next_token(Token::String(s!("remain")))
-                        .then(|| self.parse_codeblock());
-
-                    Expr::ParallelForIn {
                         iter_item,
                         iter,
                         iter_body,

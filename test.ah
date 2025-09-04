@@ -1,5 +1,3 @@
-use std::time::{Duration, Instant};
-
 fn mandelbrot(width: usize, height: usize, iterations: usize): Vec<u32> {
     var pixels = Vec::with_capacity(width * height);
     for i in 0..(width*height) {
@@ -31,15 +29,7 @@ fn main() {
     vec.push(i); 
   }
 
-  let start = Instant::now();
-
-  parallelFor i in vec {
+  for i in &mut vec {
     mandelbrot(1024, 1024, *i % 15 + 60);
   }
-
-  //for i in &mut vec {
-  //    mandelbrot(1024, 1024, *i % 15 + 60);
-  //}
-
-  println!("{:?}", start.elapsed()); 
 }
