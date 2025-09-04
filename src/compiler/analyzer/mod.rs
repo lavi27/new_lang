@@ -3,11 +3,10 @@ use ahash::{HashMap, HashMapExt};
 use crate::compiler::{codegen::ToRust, exprs::*, parser::SyntaxTree};
 
 type Var = String;
-type Type_ = String;
 
 pub struct Analyzer<'a> {
     ast: &'a SyntaxTree,
-    scope_stack: Vec<HashMap<Var, Type_>>,
+    scope_stack: Vec<HashMap<Var, TypeExpr>>,
 }
 
 impl<'a> Analyzer<'a> {
@@ -17,9 +16,13 @@ impl<'a> Analyzer<'a> {
     }
 
     pub fn new(ast: &'a SyntaxTree) -> Self {
+        let mut stdlib = HashMap::new();
+
+        stdlib.insert("vec".into(), TypeExpr::WithArgs("".into(), Vec::new()));
+
         Self {
             ast,
-            scope_stack: vec![HashMap::new()],
+            scope_stack: vec![stdlib],
         }
     }
 
@@ -27,15 +30,14 @@ impl<'a> Analyzer<'a> {
         self.analyze_routine(&self.ast.main_routine);
     }
 
-    fn analyze_type(&mut self, expr: &Expr) {}
-
-    fn analyze_value_expr(&mut self, expr: &ValueExpr) {
+    fn get_type_of_value(&mut self, expr: &ValueExpr) -> TypeExpr {
         match expr {
+            ValueExpr::
             _ => {}
         }
     }
 
-    fn analyze_for_in(&mut self) {}
+    fn analyze_for_in(&mut self, iter_item: &VariableDefineExpr, iter:&ValueExpr, body: &CodeBlock) {}
 
     fn analyze_routine(&mut self, routine: &Vec<Expr>) {
         self.scope_stack.push(HashMap::new());
@@ -52,7 +54,9 @@ impl<'a> Analyzer<'a> {
                     args,
                     body,
                 } => {
-                    curr_scope.insert(name.clone(), return_type.to_rust());
+                    self.analyze_routine(&body.0);
+
+                    curr_scope.insert(name.clone(), return_type.clone());
                 }
                 Expr::VariableLet { define_expr, value } => {
                     let VariableDefineExpr::One {
@@ -63,7 +67,31 @@ impl<'a> Analyzer<'a> {
                     else {
                         continue;
                     };
+
+                    let type_ = type_.unwrap_or_else(|| self.get_type_of_value(value));
+
+                    curr_scope.insert(name.clone(), type_);
                 }
+                Expr::VariableVar { define_expr, value } => {
+                    let VariableDefineExpr::One {
+                        is_mut,
+                        name,
+                        type_,
+                    } = define_expr
+                    else {
+                        continue;
+                    };
+
+                    let type_ = type_.clone().unwrap_or_else(|| self.get_type_of_value(value));
+
+                    curr_scope.insert(name.clone(), type_);
+                }
+                Expr::ForIn {
+                    iter_item,
+                    iter,
+                    iter_body,
+                    remain_body,
+                } => self.analyze_for_in(iter_item, iter, iter_body),
                 _ => {}
             }
         }
@@ -71,3 +99,7 @@ impl<'a> Analyzer<'a> {
         self.scope_stack.pop();
     }
 }
+
+// - 데이터 종속성 파악을 통한 simd 연산
+// - 스케줄링 구현
+// - 자동 스레딩
