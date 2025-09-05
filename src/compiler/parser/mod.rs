@@ -351,88 +351,87 @@ impl Parser {
         })
     }
 
-    fn try_parse_infix_value_exprs(&mut self, first: ValueExpr) -> Option<ValueExpr> {        
-        fn _try_parse_infix_value_exprs_recursive(
-            &mut self,
-            left_val: ValueExpr,
-            min_priority: usize,
-        ) -> ValueExpr {
-            let mut result = left_val.clone();
+    fn _try_parse_infix_value_exprs_recursive(
+        &mut self,
+        left_val: ValueExpr,
+        min_priority: usize,
+    ) -> ValueExpr {
+        let mut result = left_val.clone();
 
-            loop {
-                let Some(infix_token) = self.token_stream.peek() else {
-                    break;
-                };
-                let priority = match infix_token {
-                    Token::Plus | Token::Minus => 2,
-                    Token::Asterisk | Token::Slash | Token::Percent => 3,
-                    Token::BoolAnd | Token::BoolOr => 0,
-                    Token::BoolEqual
-                    | Token::BoolNotEqual
-                    | Token::LeftAngleBracket
-                    | Token::RightAngleBracket => 1,
-                    Token::String(_) => 4,
-                    _ => break,
-                };
+        loop {
+            let Some(infix_token) = self.token_stream.peek() else {
+                break;
+            };
+            let priority = match infix_token {
+                Token::Plus | Token::Minus => 2,
+                Token::Asterisk | Token::Slash | Token::Percent => 3,
+                Token::BoolAnd | Token::BoolOr => 0,
+                Token::BoolEqual
+                | Token::BoolNotEqual
+                | Token::LeftAngleBracket
+                | Token::RightAngleBracket => 1,
+                Token::String(_) => 4,
+                _ => break,
+            };
 
-                if priority < min_priority {
-                    break;
-                }
-
-                self.token_stream.next();
-
-                if let Token::String(string) = infix_token {
-                    if string == "as" {
-                        result = ValueExpr::As {
-                            value: Box::new(left_val.clone()),
-                            type_: Box::new(self.parse_type_expr()),
-                        };
-
-                        continue;
-                    } else {
-                        panic!("Expected some infix value expression. Found '{string}'.");
-                    }
-                };
-
-                let right_val = self.parse_single_value_expr();
-
-                let right_val =
-                    self._try_parse_infix_value_exprs_recursive(right_val.clone(), priority);
-
-                result = match infix_token {
-                    Token::Plus => ValueExpr::Add(Box::new(result.clone()), Box::new(right_val)),
-                    Token::Minus => ValueExpr::Sub(Box::new(result.clone()), Box::new(right_val)),
-                    Token::Asterisk => ValueExpr::Mul(Box::new(result.clone()), Box::new(right_val)),
-                    Token::Slash => ValueExpr::Div(Box::new(result.clone()), Box::new(right_val)),
-                    Token::Percent => {
-                        ValueExpr::Remainder(Box::new(result.clone()), Box::new(right_val))
-                    }
-                    Token::BoolAnd => {
-                        ValueExpr::BoolAnd(Box::new(result.clone()), Box::new(right_val.clone()))
-                    }
-                    Token::BoolOr => {
-                        ValueExpr::BoolOr(Box::new(result.clone()), Box::new(right_val.clone()))
-                    }
-                    Token::BoolEqual => {
-                        ValueExpr::BoolEqual(Box::new(result.clone()), Box::new(right_val.clone()))
-                    }
-                    Token::BoolNotEqual => {
-                        ValueExpr::BoolNotEqual(Box::new(result.clone()), Box::new(right_val.clone()))
-                    }
-                    Token::LeftAngleBracket => {
-                        ValueExpr::GreaterThan(Box::new(result.clone()), Box::new(right_val.clone()))
-                    }
-                    Token::RightAngleBracket => {
-                        ValueExpr::LessThan(Box::new(result.clone()), Box::new(right_val.clone()))
-                    }
-                    _ => panic!("This compiler sucks."),
-                };
+            if priority < min_priority {
+                break;
             }
 
-            result
+            self.token_stream.next();
+
+            if let Token::String(string) = infix_token {
+                if string == "as" {
+                    result = ValueExpr::As {
+                        value: Box::new(left_val.clone()),
+                        type_: Box::new(self.parse_type_expr()),
+                    };
+
+                    continue;
+                } else {
+                    panic!("Expected some infix value expression. Found '{string}'.");
+                }
+            };
+
+            let right_val = self.parse_single_value_expr();
+
+            let right_val =
+                self._try_parse_infix_value_exprs_recursive(right_val.clone(), priority);
+
+            result = match infix_token {
+                Token::Plus => ValueExpr::Add(Box::new(result.clone()), Box::new(right_val)),
+                Token::Minus => ValueExpr::Sub(Box::new(result.clone()), Box::new(right_val)),
+                Token::Asterisk => ValueExpr::Mul(Box::new(result.clone()), Box::new(right_val)),
+                Token::Slash => ValueExpr::Div(Box::new(result.clone()), Box::new(right_val)),
+                Token::Percent => {
+                    ValueExpr::Remainder(Box::new(result.clone()), Box::new(right_val))
+                }
+                Token::BoolAnd => {
+                    ValueExpr::BoolAnd(Box::new(result.clone()), Box::new(right_val.clone()))
+                }
+                Token::BoolOr => {
+                    ValueExpr::BoolOr(Box::new(result.clone()), Box::new(right_val.clone()))
+                }
+                Token::BoolEqual => {
+                    ValueExpr::BoolEqual(Box::new(result.clone()), Box::new(right_val.clone()))
+                }
+                Token::BoolNotEqual => {
+                    ValueExpr::BoolNotEqual(Box::new(result.clone()), Box::new(right_val.clone()))
+                }
+                Token::LeftAngleBracket => {
+                    ValueExpr::GreaterThan(Box::new(result.clone()), Box::new(right_val.clone()))
+                }
+                Token::RightAngleBracket => {
+                    ValueExpr::LessThan(Box::new(result.clone()), Box::new(right_val.clone()))
+                }
+                _ => panic!("This compiler sucks."),
+            };
         }
 
-        
+        result
+    }
+
+    fn try_parse_infix_value_exprs(&mut self, first: ValueExpr) -> Option<ValueExpr> {
         let Some(infix_token) = self.token_stream.peek() else {
             return None;
         };
@@ -448,7 +447,7 @@ impl Parser {
             _ => return None,
         };
 
-        Some(_try_parse_infix_value_exprs_recursive(&mut self, first, 0))
+        Some(self._try_parse_infix_value_exprs_recursive(first, 0))
     }
 
     fn try_parse_field_or_method(&mut self, first: ValueExpr) -> Option<ValueExpr> {
@@ -795,10 +794,9 @@ impl Parser {
                     self.token_stream.next();
                     let name = self.get_string_token();
 
-                    let type_args = (
-                        self.is_next_token(Token::LeftAngleBracket)
-                        && !self.is_next_token(Token::RightAngleBracket)
-                    ).then(|| {
+                    let type_args = (self.is_next_token(Token::LeftAngleBracket)
+                        && !self.is_next_token(Token::RightAngleBracket))
+                    .then(|| {
                         let mut tmp = Vec::new();
 
                         tmp.push(self.get_string_token());
@@ -806,7 +804,7 @@ impl Parser {
                         while !self.is_next_token(Token::RightAngleBracket) {
                             self.assert_next_token(Token::Comma);
                             tmp.push(self.get_string_token());
-                        };
+                        }
 
                         tmp
                     });
