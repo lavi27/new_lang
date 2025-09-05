@@ -147,7 +147,7 @@ impl ToRust for Expr {
                     format!(
                         "fn {}<{}>({}) -> {} {}",
                         name,
-                        expr_vec_to_rust(type_args, ", "),
+                        type_args.join(", "),
                         expr_vec_to_rust(args, ", "),
                         return_type.to_rust(),
                         body.to_rust()

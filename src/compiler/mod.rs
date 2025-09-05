@@ -13,8 +13,9 @@ use std::{
     path::Path,
 };
 
-use codegen::*;
-use parser::*;
+use codegen::Codegen;
+use parser::Parser;
+use analyzer::Analyzer;
 
 pub struct Compiler {
     path: String,
@@ -124,6 +125,8 @@ impl Compiler {
 
             return Err(());
         };
+
+        Analyzer::analyze_static(&ast);
 
         Ok(Codegen::generate_static(&ast, self.option.clone()))
     }

@@ -54,7 +54,7 @@ pub enum Expr {
     },
     FnDefine {
         name: String,
-        type_args: Option<Vec<TypeExpr>>,
+        type_args: Option<Vec<String>>,
         return_type: TypeExpr,
         args: Vec<VariableDefineExpr>,
         body: CodeBlock,
@@ -139,7 +139,7 @@ pub enum VariableDefineExpr {
     TupleDestruct(Vec<VariableDefineExpr>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum TypeExpr {
     Name(String),
     Tuple(Vec<TypeExpr>),

@@ -1,5 +1,5 @@
 fn mandelbrot(width: usize, height: usize, iterations: usize): Vec<u32> {
-    var pixels = Vec::with_capacity(width * height);
+    var pixels = Vec::with_capacity<u32>(width * height);
     for i in 0..(width*height) {
       pixels.push(0);
     } 
@@ -24,7 +24,7 @@ fn mandelbrot(width: usize, height: usize, iterations: usize): Vec<u32> {
 }
 
 fn main() {
-  var vec = Vec::with_capacity(1000);
+  var vec = Vec::with_capacity<usize>(1000);
   for i in 0..vec.capacity() {
     vec.push(i); 
   }

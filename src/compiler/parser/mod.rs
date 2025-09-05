@@ -796,7 +796,21 @@ impl Parser {
                     self.token_stream.next();
                     let name = self.get_string_token();
 
-                    let type_args = self.try_parse_type_args();
+                    let type_args = (
+                        self.is_next_token(Token::LeftAngleBracket)
+                        && !self.is_next_token(Token::RightAngleBracket)
+                    ).then(|| {
+                        let mut tmp = Vec::new();
+
+                        tmp.push(self.get_string_token());
+
+                        while !self.is_next_token(Token::RightAngleBracket) {
+                            self.assert_next_token(Token::Comma);
+                            tmp.push(self.get_string_token());
+                        };
+
+                        tmp
+                    });
 
                     self.assert_next_token(Token::LeftParen);
                     let args = self.parse_comma_define_exprs(Token::RightParen);
