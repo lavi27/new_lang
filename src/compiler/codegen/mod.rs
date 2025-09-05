@@ -124,6 +124,12 @@ impl ToRust for Expr {
             Self::While { condition, body } => {
                 format!("while {} {}", condition.to_rust(), body.to_rust())
             }
+            Self::ParalForIn {
+                iter_item,
+                iter,
+                iter_body,
+                remain_body,
+            } => paral_for_in_to_rust(iter_item, iter, iter_body, remain_body),
             Self::ForIn {
                 iter_item,
                 iter,
@@ -389,7 +395,7 @@ macro_rules! put {
     };
 }
 
-pub fn parallel_for_in_to_rust(
+pub fn paral_for_in_to_rust(
     iter_item: &VariableDefineExpr,
     iter: &ValueExpr,
     iter_body: &CodeBlock,

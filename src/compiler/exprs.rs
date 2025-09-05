@@ -40,6 +40,12 @@ pub enum Expr {
         iter_body: CodeBlock,
         remain_body: Option<CodeBlock>,
     },
+    ParalForIn {
+        iter_item: VariableDefineExpr,
+        iter: ValueExpr,
+        iter_body: CodeBlock,
+        remain_body: Option<CodeBlock>,
+    },
     While {
         condition: ValueExpr,
         body: CodeBlock,
