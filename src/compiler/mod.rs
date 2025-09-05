@@ -126,7 +126,7 @@ impl Compiler {
             return Err(());
         };
 
-        Analyzer::analyze_static(&ast);
+        let ast = Analyzer::analyze_static(ast);
 
         Ok(Codegen::generate_static(&ast, self.option.clone()))
     }
