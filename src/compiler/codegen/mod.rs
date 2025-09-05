@@ -228,7 +228,7 @@ impl ToRust for ValueExpr {
 
                 if let Some(type_args) = type_args {
                     format!(
-                        "{}{}<{}>({})",
+                        "{}{}::<{}>({})",
                         namespace_prefix,
                         name,
                         expr_vec_to_rust(type_args, ", "),
