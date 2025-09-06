@@ -8,37 +8,23 @@ use std::{
 
 use crate::{compiler::exprs::*, s};
 
+use slotmap::SlotMap;
 use token_stream::*;
-
 pub struct SyntaxTree {
-    pub main_routine: Vec<ExprId>,
-    pub exprs: Vec<Expr>,
-    pub value_exprs: Vec<ValueExpr>,
-    pub code_blocks: Vec<CodeBlock>,
+    pub main_routine: Vec<ExprKey>,
+    pub exprs: SlotMap<ExprKey, Expr>,
+    pub value_exprs: SlotMap<ValueExprKey, ValueExpr>,
+    pub code_blocks: SlotMap<CodeBlockKey, CodeBlock>,
     pub is_threading_used: bool,
-}
-
-impl SyntaxTree {
-    pub fn get_expr(&self, id: ExprId) -> &Expr {
-        &self.exprs[id.0]
-    }
-
-    pub fn get_value_expr(&self, id: ValueExprId) -> &ValueExpr {
-        &self.value_exprs[id.0]
-    }
-
-    pub fn get_code_block(&self, id: CodeBlockId) -> &CodeBlock {
-        &self.code_blocks[id.0]
-    }
 }
 
 impl Default for SyntaxTree {
     fn default() -> Self {
         Self {
             main_routine: Vec::new(),
-            exprs: Vec::new(),
-            value_exprs: Vec::new(),
-            code_blocks: Vec::new(),
+            exprs: SlotMap::with_key(),
+            value_exprs: SlotMap::with_key(),
+            code_blocks: SlotMap::with_key(),
             is_threading_used: false,
         }
     }
@@ -155,31 +141,10 @@ impl Parser {
         }
     }
 
-    fn alloc_expr(&mut self, expr: Expr) -> ExprId {
-        let id = self.result.exprs.len();
-        self.result.exprs.push(expr);
-
-        ExprId(id)
-    }
-
-    fn alloc_value_expr(&mut self, expr: ValueExpr) -> ValueExprId {
-        let id = self.result.value_exprs.len();
-        self.result.value_exprs.push(expr);
-
-        ValueExprId(id)
-    }
-
-    fn alloc_codeblock(&mut self, expr: CodeBlock) -> CodeBlockId {
-        let id = self.result.code_blocks.len();
-        self.result.code_blocks.push(expr);
-
-        CodeBlockId(id)
-    }
-
     // # PARSE_COMMA_- METHODS #
     // 콤마로 나뉜 표현식을 처리하기 위해 특화된 저수준 매서드.
 
-    fn parse_comma_value_exprs(&mut self, end_token: Token) -> Vec<ValueExprId> {
+    fn parse_comma_value_exprs(&mut self, end_token: Token) -> Vec<ValueExprKey> {
         let mut items = Vec::new();
 
         if self.is_next_token(end_token.clone()) {
@@ -351,7 +316,7 @@ impl Parser {
         &mut self,
         fn_name: String,
         namespace: NamespaceChain,
-    ) -> Option<ValueExprId> {
+    ) -> Option<ValueExprKey> {
         let type_args = self.try_parse_type_args();
 
         if (self.token_stream.peek() != Some(Token::LeftParen)) && type_args.is_none() {
@@ -361,7 +326,7 @@ impl Parser {
         self.assert_next_token(Token::LeftParen);
         let args = self.parse_comma_value_exprs(Token::RightParen);
 
-        Some(self.alloc_value_expr(ValueExpr::FnCall {
+        Some(self.result.value_exprs.insert(ValueExpr::FnCall {
             namespace,
             name: fn_name,
             type_args,
@@ -369,7 +334,7 @@ impl Parser {
         }))
     }
 
-    fn try_parse_macro(&mut self, name: String, namespace: NamespaceChain) -> Option<ValueExprId> {
+    fn try_parse_macro(&mut self, name: String, namespace: NamespaceChain) -> Option<ValueExprKey> {
         if !self.is_next_token(Token::Exclamationmark) {
             return None;
         }
@@ -382,7 +347,7 @@ impl Parser {
             return None;
         };
 
-        Some(self.alloc_value_expr(ValueExpr::MacroCall {
+        Some(self.result.value_exprs.insert(ValueExpr::MacroCall {
             namespace,
             name,
             args,
@@ -391,9 +356,9 @@ impl Parser {
 
     fn _try_parse_infix_value_exprs_recursive(
         &mut self,
-        left_val: ValueExprId,
+        left_val: ValueExprKey,
         min_priority: usize,
-    ) -> ValueExprId {
+    ) -> ValueExprKey {
         let mut result = left_val;
 
         loop {
@@ -424,7 +389,7 @@ impl Parser {
                         value: left_val,
                         type_: Box::new(self.parse_type_expr()),
                     };
-                    result = self.alloc_value_expr(result_tmp);
+                    result = self.result.value_exprs.insert(result_tmp);
 
                     continue;
                 } else {
@@ -450,13 +415,13 @@ impl Parser {
                 Token::RightAngleBracket => ValueExpr::LessThan(result, right_val),
                 _ => panic!("This compiler sucks."),
             };
-            result = self.alloc_value_expr(result_tmp)
+            result = self.result.value_exprs.insert(result_tmp)
         }
 
         result
     }
 
-    fn try_parse_infix_value_exprs(&mut self, first: ValueExprId) -> Option<ValueExprId> {
+    fn try_parse_infix_value_exprs(&mut self, first: ValueExprKey) -> Option<ValueExprKey> {
         let Some(infix_token) = self.token_stream.peek() else {
             return None;
         };
@@ -475,7 +440,11 @@ impl Parser {
         Some(self._try_parse_infix_value_exprs_recursive(first, 0))
     }
 
-    fn try_parse_method_call(&mut self, object: ValueExprId, name: String) -> Option<ValueExprId> {
+    fn try_parse_method_call(
+        &mut self,
+        object: ValueExprKey,
+        name: String,
+    ) -> Option<ValueExprKey> {
         let type_args = self.try_parse_type_args();
 
         if (self.token_stream.peek() != Some(Token::LeftParen)) && type_args.is_none() {
@@ -485,7 +454,7 @@ impl Parser {
         self.assert_next_token(Token::LeftParen);
         let args = self.parse_comma_value_exprs(Token::RightParen);
 
-        Some(self.alloc_value_expr(ValueExpr::MethodCall {
+        Some(self.result.value_exprs.insert(ValueExpr::MethodCall {
             object,
             method: name,
             type_args,
@@ -493,7 +462,7 @@ impl Parser {
         }))
     }
 
-    fn try_parse_field_or_method(&mut self, first: ValueExprId) -> Option<ValueExprId> {
+    fn try_parse_field_or_method(&mut self, first: ValueExprKey) -> Option<ValueExprKey> {
         if !self.is_next_token(Token::Period) {
             return None;
         }
@@ -508,13 +477,13 @@ impl Parser {
                 field: self.get_string_token(),
             };
 
-            self.alloc_value_expr(tmp)
+            self.result.value_exprs.insert(tmp)
         };
 
         Some(expr)
     }
 
-    fn try_parse_indexing(&mut self, value: ValueExprId) -> Option<ValueExprId> {
+    fn try_parse_indexing(&mut self, value: ValueExprKey) -> Option<ValueExprKey> {
         if !self.is_next_token(Token::LeftBracket) {
             return None;
         }
@@ -526,10 +495,10 @@ impl Parser {
 
         self.assert_next_token(Token::RightBracket);
 
-        Some(self.alloc_value_expr(result))
+        Some(self.result.value_exprs.insert(result))
     }
 
-    fn try_parse_infix_expr(&mut self, variable: ValueExprId) -> Option<ExprId> {
+    fn try_parse_infix_expr(&mut self, variable: ValueExprKey) -> Option<ExprKey> {
         let res = match self.token_stream.peek().unwrap() {
             Token::Equal => {
                 self.token_stream.next();
@@ -566,10 +535,10 @@ impl Parser {
             }
         };
 
-        Some(self.alloc_expr(res))
+        Some(self.result.exprs.insert(res))
     }
 
-    fn try_parse_range_expr(&mut self, start: ValueExprId) -> Option<ValueExprId> {
+    fn try_parse_range_expr(&mut self, start: ValueExprKey) -> Option<ValueExprKey> {
         if self.is_next_token(Token::Range) {
             let end = self.parse_single_value_expr();
 
@@ -579,7 +548,7 @@ impl Parser {
                 is_inclusive: false,
             };
 
-            return Some(self.alloc_value_expr(res));
+            return Some(self.result.value_exprs.insert(res));
         } else if self.is_next_token(Token::InclusiveRange) {
             let end = self.parse_single_value_expr();
 
@@ -589,7 +558,7 @@ impl Parser {
                 is_inclusive: true,
             };
 
-            return Some(self.alloc_value_expr(res));
+            return Some(self.result.value_exprs.insert(res));
         }
 
         None
@@ -658,13 +627,13 @@ impl Parser {
         }
     }
 
-    fn parse_value_exprs(&mut self) -> ValueExprId {
+    fn parse_value_exprs(&mut self) -> ValueExprKey {
         let single = self.parse_single_value_expr();
 
         self.try_parse_infix_value_exprs(single).unwrap_or(single)
     }
 
-    fn parse_single_value_expr(&mut self) -> ValueExprId {
+    fn parse_single_value_expr(&mut self) -> ValueExprKey {
         let curr_token = self
             .token_stream
             .next()
@@ -678,11 +647,15 @@ impl Parser {
         let result = match curr_token {
             Token::DoubleQuote => {
                 let str = self.token_stream.string_before_char(b'"');
-                self.alloc_value_expr(ValueExpr::StringLiteral(str))
+                self.result
+                    .value_exprs
+                    .insert(ValueExpr::StringLiteral(str))
             }
             Token::Quote => {
                 let str = self.token_stream.string_before_char(b'\'');
-                self.alloc_value_expr(ValueExpr::StringLiteral(str))
+                self.result
+                    .value_exprs
+                    .insert(ValueExpr::StringLiteral(str))
             }
             Token::Intager(int) => {
                 if self.is_next_token(Token::Period) {
@@ -695,13 +668,13 @@ impl Parser {
                         panic!("Invalid decimal places of float literal.");
                     };
 
-                    self.alloc_value_expr(ValueExpr::FloatLiteral(
+                    self.result.value_exprs.insert(ValueExpr::FloatLiteral(
                         format!("{}.{}", int, decimal_places)
                             .parse::<f64>()
                             .expect("Invalid float literal."),
                     ))
                 } else {
-                    self.alloc_value_expr(ValueExpr::IntagerLiteral(
+                    self.result.value_exprs.insert(ValueExpr::IntagerLiteral(
                         int.parse::<i64>().expect("Invalid int literal."),
                     ))
                 }
@@ -709,17 +682,25 @@ impl Parser {
             Token::LeftParen => {
                 let items = self.parse_comma_value_exprs(Token::RightParen);
 
-                self.alloc_value_expr(ValueExpr::Tuple(items))
+                if items.len() == 1 {
+                    self.result
+                        .value_exprs
+                        .insert(ValueExpr::GroupingParen(items[0]))
+                } else {
+                    self.result.value_exprs.insert(ValueExpr::Tuple(items))
+                }
             }
             Token::Asterisk => {
                 let var = self.parse_single_value_expr();
-                self.alloc_value_expr(ValueExpr::Dereference(var))
+                self.result.value_exprs.insert(ValueExpr::Dereference(var))
             }
             Token::Ampersand => {
                 let is_mut = self.is_next_token(Token::String(s!("mut")));
                 let var = self.parse_single_value_expr();
 
-                self.alloc_value_expr(ValueExpr::Reference { value: var, is_mut })
+                self.result
+                    .value_exprs
+                    .insert(ValueExpr::Reference { value: var, is_mut })
             }
             Token::String(str) => {
                 let (namespace, str) = self.try_parse_namespace(str.clone());
@@ -729,7 +710,7 @@ impl Parser {
                 } else if let Some(fn_expr) = self.try_parse_fn_call(str.clone(), namespace) {
                     fn_expr
                 } else {
-                    self.alloc_value_expr(ValueExpr::Variable(str))
+                    self.result.value_exprs.insert(ValueExpr::Variable(str))
                 }
             }
             other => {
@@ -752,7 +733,7 @@ impl Parser {
         }
     }
 
-    fn parse_codeline(&mut self) -> ExprId {
+    fn parse_codeline(&mut self) -> ExprKey {
         let curr_token = self
             .token_stream
             .peek()
@@ -773,7 +754,7 @@ impl Parser {
                         .is_next_token(Token::String(s!("else")))
                         .then(|| self.parse_codeblock());
 
-                    self.alloc_expr(Expr::If {
+                    self.result.exprs.insert(Expr::If {
                         condition,
                         if_body,
                         else_body,
@@ -784,7 +765,7 @@ impl Parser {
                     let condition = self.parse_value_exprs();
                     let body = self.parse_codeblock();
 
-                    self.alloc_expr(Expr::While { condition, body })
+                    self.result.exprs.insert(Expr::While { condition, body })
                 }
                 "for" => {
                     self.token_stream.next();
@@ -799,7 +780,7 @@ impl Parser {
                         .is_next_token(Token::String(s!("remain")))
                         .then(|| self.parse_codeblock());
 
-                    self.alloc_expr(Expr::ForIn {
+                    self.result.exprs.insert(Expr::ForIn {
                         iter_item,
                         iter,
                         iter_body,
@@ -815,7 +796,9 @@ impl Parser {
                     let value = self.parse_value_exprs();
                     self.assert_next_token(Token::Semicolon);
 
-                    self.alloc_expr(Expr::VariableLet { define_expr, value })
+                    self.result
+                        .exprs
+                        .insert(Expr::VariableLet { define_expr, value })
                 }
                 "var" => {
                     self.token_stream.next();
@@ -825,7 +808,9 @@ impl Parser {
                     let value = self.parse_value_exprs();
                     self.assert_next_token(Token::Semicolon);
 
-                    self.alloc_expr(Expr::VariableVar { define_expr, value })
+                    self.result
+                        .exprs
+                        .insert(Expr::VariableVar { define_expr, value })
                 }
                 "fn" => {
                     self.token_stream.next();
@@ -857,7 +842,7 @@ impl Parser {
 
                     let body = self.parse_codeblock();
 
-                    self.alloc_expr(Expr::FnDefine {
+                    self.result.exprs.insert(Expr::FnDefine {
                         name,
                         type_args,
                         return_type,
@@ -871,25 +856,25 @@ impl Parser {
 
                     self.assert_next_token(Token::Semicolon);
 
-                    self.alloc_expr(Expr::Return(value))
+                    self.result.exprs.insert(Expr::Return(value))
                 }
                 "use" => {
                     self.token_stream.next();
 
                     let res_tmp = Expr::NamespaceUse(self.parse_namespace_tree());
-                    self.alloc_expr(res_tmp)
+                    self.result.exprs.insert(res_tmp)
                 }
                 _ => {
                     let var = self.parse_value_exprs();
 
                     let res = self
                         .try_parse_infix_expr(var)
-                        .unwrap_or(self.alloc_expr(Expr::ValueExpr(var)));
+                        .unwrap_or(self.result.exprs.insert(Expr::ValueExpr(var)));
 
                     if self.is_next_token(Token::Semicolon) {
                         res
                     } else {
-                        self.alloc_expr(Expr::ReturnExpr(res))
+                        self.result.exprs.insert(Expr::ReturnExpr(res))
                     }
                 }
             },
@@ -905,11 +890,11 @@ impl Parser {
             Token::Asterisk => {
                 self.token_stream.next();
                 let var_tmp = ValueExpr::Dereference(self.parse_single_value_expr());
-                let var = self.alloc_value_expr(var_tmp);
+                let var = self.result.value_exprs.insert(var_tmp);
 
                 let res = self
                     .try_parse_infix_expr(var)
-                    .unwrap_or(self.alloc_expr(Expr::ValueExpr(var)));
+                    .unwrap_or(self.result.exprs.insert(Expr::ValueExpr(var)));
 
                 self.assert_next_token(Token::Semicolon);
 
@@ -921,7 +906,7 @@ impl Parser {
         }
     }
 
-    fn parse_codeblock(&mut self) -> CodeBlockId {
+    fn parse_codeblock(&mut self) -> CodeBlockKey {
         self.assert_next_token(Token::LeftBrace);
 
         let mut lines = Vec::new();
@@ -930,6 +915,6 @@ impl Parser {
             lines.push(self.parse_codeline());
         }
 
-        self.alloc_codeblock(CodeBlock(lines))
+        self.result.code_blocks.insert(CodeBlock(lines))
     }
 }

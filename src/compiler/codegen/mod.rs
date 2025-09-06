@@ -79,21 +79,21 @@ pub trait ToRust {
     fn to_rust(&self, ctx: &SyntaxTree) -> String;
 }
 
-impl ToRust for ExprId {
+impl ToRust for ExprKey {
     fn to_rust(&self, ctx: &SyntaxTree) -> String {
-        ctx.get_expr(self.clone()).to_rust(ctx)
+        ctx.exprs.get(self.clone()).unwrap().to_rust(ctx)
     }
 }
 
-impl ToRust for ValueExprId {
+impl ToRust for ValueExprKey {
     fn to_rust(&self, ctx: &SyntaxTree) -> String {
-        ctx.get_value_expr(self.clone()).to_rust(ctx)
+        ctx.value_exprs.get(self.clone()).unwrap().to_rust(ctx)
     }
 }
 
-impl ToRust for CodeBlockId {
+impl ToRust for CodeBlockKey {
     fn to_rust(&self, ctx: &SyntaxTree) -> String {
-        ctx.get_code_block(self.clone()).to_rust(ctx)
+        ctx.code_blocks.get(self.clone()).unwrap().to_rust(ctx)
     }
 }
 
@@ -230,6 +230,7 @@ impl ToRust for ValueExpr {
             Self::LessThan(lvel, rvel) => format!("{}<{}", lvel.to_rust(ctx), rvel.to_rust(ctx)),
             Self::GreaterThan(lvel, rvel) => format!("{}>{}", lvel.to_rust(ctx), rvel.to_rust(ctx)),
             Self::Tuple(exprs) => format!("({})", expr_vec_to_rust(exprs, ", ", ctx)),
+            Self::GroupingParen(expr) => format!("({})", expr.to_rust(ctx)),
             Self::BoolAnd(lvel, rvel) => format!("{}&&{}", lvel.to_rust(ctx), rvel.to_rust(ctx)),
             Self::BoolOr(lvel, rvel) => format!("{}||{}", lvel.to_rust(ctx), rvel.to_rust(ctx)),
             Self::BoolEqual(lvel, rvel) => format!("{}=={}", lvel.to_rust(ctx), rvel.to_rust(ctx)),
@@ -437,15 +438,15 @@ macro_rules! put {
 
 pub fn paral_for_in_to_rust(
     iter_item: &VariableDefineExpr,
-    iter: ValueExprId,
-    iter_body: CodeBlockId,
-    remain_body: Option<CodeBlockId>,
+    iter: ValueExprKey,
+    iter_body: CodeBlockKey,
+    remain_body: Option<CodeBlockKey>,
     ctx: &SyntaxTree,
 ) -> String {
     let mut res = String::with_capacity(128);
     let namespace_newlang = get_static_var_hash("newlang");
 
-    if let ValueExpr::Tuple(items) = ctx.get_value_expr(iter) {
+    if let Some(ValueExpr::Tuple(items)) = ctx.value_exprs.get(iter) {
         todo!();
     } else {
         put!(res, "unsafe {{\n");
@@ -498,14 +499,14 @@ pub fn paral_for_in_to_rust(
 
 pub fn for_in_to_rust(
     iter_item: &VariableDefineExpr,
-    iter: ValueExprId,
-    iter_body: CodeBlockId,
-    remain_body: Option<CodeBlockId>,
+    iter: ValueExprKey,
+    iter_body: CodeBlockKey,
+    remain_body: Option<CodeBlockKey>,
     ctx: &SyntaxTree,
 ) -> String {
     let mut res = String::with_capacity(128);
 
-    if let ValueExpr::Tuple(iters) = ctx.get_value_expr(iter) {
+    if let Some(ValueExpr::Tuple(iters)) = ctx.value_exprs.get(iter) {
         let VariableDefineExpr::TupleDestruct(iter_items) = iter_item else {
             panic!("");
         };

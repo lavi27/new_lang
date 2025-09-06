@@ -3,7 +3,7 @@ use std::mem::take;
 use ahash::{HashMap, HashMapExt};
 
 use crate::{
-    compiler::{exprs::*, parser::SyntaxTree},
+    compiler::{codegen::ToRust, exprs::*, parser::SyntaxTree},
     none_to_err,
 };
 
@@ -23,11 +23,23 @@ struct Module {
     children: HashMap<String, StaticItem>,
 }
 
+enum RangeItemInfo {
+    Const(ConstRangeItemInfo),
+    Var(VarRangeItemInfo),
+}
+
 #[derive(Clone)]
-struct RangeItemInfo {
+struct ConstRangeItemInfo {
     delta: i64,
     min: i64,
     max: i64,
+}
+
+#[derive(Clone)]
+struct VarRangeItemInfo {
+    delta: i64,
+    min: ValueExprKey,
+    max: ValueExprKey,
 }
 
 struct ScopeInfo {
@@ -40,6 +52,7 @@ pub struct Analyzer {
     scope_stack: Vec<ScopeInfo>,
     static_items: HashMap<String, StaticItem>,
     range_item_info: HashMap<String, RangeItemInfo>,
+    tmp_value_exprs: Vec<ValueExpr>,
 }
 
 impl Analyzer {
@@ -82,6 +95,7 @@ impl Analyzer {
             static_items,
             range_item_info: HashMap::new(),
             ast,
+            tmp_value_exprs: Vec::new(),
         }
     }
 
@@ -92,18 +106,6 @@ impl Analyzer {
     }
 
     // ---
-
-    fn get_expr_mut(&mut self, id: ExprId) -> &mut Expr {
-        &mut self.ast.exprs[id.0]
-    }
-
-    fn get_value_expr_mut(&mut self, id: ValueExprId) -> &mut ValueExpr {
-        &mut self.ast.value_exprs[id.0]
-    }
-
-    fn get_code_block_mut(&mut self, id: CodeBlockId) -> &mut CodeBlock {
-        &mut self.ast.code_blocks[id.0]
-    }
 
     fn find_value_from_scopes(&self, name: &String) -> Option<TypeExpr> {
         for scope in self.scope_stack.iter().rev() {
@@ -125,8 +127,8 @@ impl Analyzer {
         return None;
     }
 
-    fn get_type_of_value(&self, expr_id: ValueExprId) -> Option<TypeExpr> {
-        let expr = self.ast.get_value_expr(expr_id);
+    fn get_type_of_value(&self, expr_id: ValueExprKey) -> Option<TypeExpr> {
+        let expr = self.ast.value_exprs.get(expr_id).unwrap();
 
         match expr {
             ValueExpr::Add(varl, varr) => {
@@ -199,13 +201,13 @@ impl Analyzer {
         }
     }
 
-    fn analyze_for_in(&mut self, expr_id: ExprId) -> Result<(), ()> {
+    fn analyze_for_in(&mut self, expr_id: ExprKey) -> Result<(), ()> {
         let Expr::ForIn {
             iter_item,
             iter,
             iter_body,
             remain_body,
-        } = self.ast.get_expr(expr_id).clone()
+        } = self.ast.exprs.get(expr_id).unwrap().clone()
         else {
             unreachable!();
         };
@@ -222,7 +224,7 @@ impl Analyzer {
             return Err(());
         };
 
-        match self.ast.get_value_expr(iter) {
+        match self.ast.value_exprs.get(iter).unwrap() {
             ValueExpr::Range {
                 start,
                 end,
@@ -231,8 +233,8 @@ impl Analyzer {
                 scope.insert(iter_item_name.clone(), TypeExpr::Name("usize".into()));
 
                 if let (ValueExpr::IntagerLiteral(start), ValueExpr::IntagerLiteral(end)) = (
-                    self.ast.get_value_expr(*start),
-                    self.ast.get_value_expr(*end),
+                    self.ast.value_exprs.get(*start).unwrap(),
+                    self.ast.value_exprs.get(*end).unwrap(),
                 ) {
                     is_paralable = true;
                     is_range_info_inserted = true;
@@ -244,11 +246,11 @@ impl Analyzer {
 
                     self.range_item_info.insert(
                         iter_item_name.clone(),
-                        RangeItemInfo {
+                        RangeItemInfo::Const(ConstRangeItemInfo {
                             delta: 1,
                             min: *start.min(&end),
                             max: *start.max(&end),
-                        },
+                        }),
                     );
                 }
             }
@@ -280,7 +282,7 @@ impl Analyzer {
                 eprintln!("optimized for-in");
             }
 
-            self.ast.exprs[expr_id.0] = Expr::ParalForIn {
+            self.ast.exprs[expr_id] = Expr::ParalForIn {
                 iter_item: iter_item.clone(),
                 iter: iter.clone(),
                 iter_body: iter_body.clone(),
@@ -291,8 +293,8 @@ impl Analyzer {
         Ok(())
     }
 
-    fn analyze_value_expr(&mut self, expr_id: ValueExprId) -> Result<(), ()> {
-        let expr = self.ast.get_value_expr(expr_id).clone();
+    fn analyze_value_expr(&mut self, expr_id: ValueExprKey) -> Result<(), ()> {
+        let expr = self.ast.value_exprs.get(expr_id).unwrap().clone();
 
         match expr {
             ValueExpr::FnCall { name, args, .. } => {
@@ -304,6 +306,11 @@ impl Analyzer {
                     return Err(());
                 };
             }
+            ValueExpr::MethodCall { args, .. } => {
+                for arg in args {
+                    self.analyze_value_expr(arg)?;
+                }
+            }
             ValueExpr::Variable(var) => {
                 let scope_floor = none_to_err!(self.find_value_scope_floor(&var), ());
                 let var_type = none_to_err!(self.find_value_from_scopes(&var), ());
@@ -314,12 +321,18 @@ impl Analyzer {
                     };
                 }
             }
+            ValueExpr::GroupingParen(var) => {
+                self.analyze_value_expr(var)?;
+            }
             ValueExpr::As { value, .. } => {
                 self.analyze_value_expr(value)?;
             }
             ValueExpr::Indexing { index, .. } => {
                 self.analyze_value_expr(index)?;
             }
+            ValueExpr::Range { .. } => {}
+            ValueExpr::IntagerLiteral(..) => {}
+            ValueExpr::FloatLiteral(..) => {}
             ValueExpr::Add(varl, varr)
             | ValueExpr::Sub(varl, varr)
             | ValueExpr::Mul(varl, varr)
@@ -331,14 +344,17 @@ impl Analyzer {
                 self.analyze_value_expr(varl)?;
                 self.analyze_value_expr(varr)?;
             }
-            _ => return Err(()),
+            _ => {
+                eprintln!("{}", expr.to_rust(&self.ast));
+                return Err(());
+            }
         };
 
         Ok(())
     }
 
-    fn analyze_expr(&mut self, expr_id: ExprId) -> Result<(), ()> {
-        let expr = self.ast.get_expr(expr_id).clone();
+    fn analyze_expr(&mut self, expr_id: ExprKey) -> Result<(), ()> {
+        let expr = self.ast.exprs.get(expr_id).unwrap().clone();
 
         match expr {
             Expr::VariableLet { define_expr, value } | Expr::VariableVar { define_expr, value } => {
@@ -391,7 +407,7 @@ impl Analyzer {
                     return Err(());
                 };
 
-                let var_ref = self.ast.get_value_expr(variable).clone();
+                let var_ref = self.ast.value_exprs.get(variable).unwrap().clone();
 
                 match var_ref {
                     ValueExpr::Indexing { index, .. } => {
@@ -487,7 +503,7 @@ impl Analyzer {
         Ok(())
     }
 
-    fn _analyze_routine(&mut self, routine: &Vec<ExprId>) -> Result<(), ()> {
+    fn _analyze_routine(&mut self, routine: &Vec<ExprKey>) -> Result<(), ()> {
         for expr in routine {
             self.analyze_expr(*expr)?;
         }
@@ -497,7 +513,7 @@ impl Analyzer {
 
     fn goto_scope(
         &mut self,
-        routine: &Vec<ExprId>,
+        routine: &Vec<ExprKey>,
         scope: HashMap<String, TypeExpr>,
     ) -> Result<(), ()> {
         self.scope_stack.push(ScopeInfo {
@@ -512,31 +528,42 @@ impl Analyzer {
 
     fn goto_codeblock(
         &mut self,
-        codeblock_id: CodeBlockId,
+        codeblock_id: CodeBlockKey,
         scope: HashMap<String, TypeExpr>,
     ) -> Result<(), ()> {
-        self.goto_scope(&self.ast.get_code_block(codeblock_id).0.clone(), scope)
+        self.goto_scope(
+            &self.ast.code_blocks.get(codeblock_id).unwrap().0.clone(),
+            scope,
+        )
     }
 
-    fn is_chunkable(&mut self, expr: ValueExprId) -> bool {
+    fn is_chunkable(&mut self, expr: ValueExprKey) -> bool {
         self.try_const_folding(expr);
 
         self._is_affine_form(expr) && self._is_injective(expr)
     }
 
-    fn _is_affine_form(&self, expr_id: ValueExprId) -> bool {
-        let expr = self.ast.get_value_expr(expr_id).clone();
+    fn _is_affine_form(&self, expr_id: ValueExprKey) -> bool {
+        let expr = self.ast.value_exprs.get(expr_id).unwrap().clone();
 
         match expr {
             ValueExpr::Add(varl, varr) | ValueExpr::Sub(varl, varr) => {
                 self._is_affine_form(varl) && self._is_affine_form(varr)
             }
             ValueExpr::Mul(varl, varr) => {
-                matches!(self.ast.get_value_expr(varr), ValueExpr::IntagerLiteral(..))
-                    || matches!(self.ast.get_value_expr(varl), ValueExpr::IntagerLiteral(..))
+                matches!(
+                    self.ast.value_exprs.get(varr).unwrap(),
+                    ValueExpr::IntagerLiteral(..)
+                ) || matches!(
+                    self.ast.value_exprs.get(varl).unwrap(),
+                    ValueExpr::IntagerLiteral(..)
+                )
             }
             ValueExpr::Div(.., varr) => {
-                matches!(self.ast.get_value_expr(varr), ValueExpr::IntagerLiteral(..))
+                matches!(
+                    self.ast.value_exprs.get(varr).unwrap(),
+                    ValueExpr::IntagerLiteral(..)
+                )
             }
             ValueExpr::Variable(name) => self.range_item_info.get(&name).is_some(),
             ValueExpr::IntagerLiteral(..) => true,
@@ -544,15 +571,15 @@ impl Analyzer {
         }
     }
 
-    fn _is_injective(&self, expr: ValueExprId) -> bool {
+    fn _is_injective(&self, expr: ValueExprKey) -> bool {
         self._is_injective_inner(expr).is_some()
     }
 
-    fn _concat_range(&self, r0: ValueExprId, r1: ValueExprId) -> Option<RangeItemInfo> {
-        let ValueExpr::Variable(varl) = self.ast.get_value_expr(r0).clone() else {
+    fn _concat_range(&self, r0: ValueExprKey, r1: ValueExprKey) -> Option<RangeItemInfo> {
+        let ValueExpr::Variable(varl) = self.ast.value_exprs.get(r0).unwrap().clone() else {
             unreachable!();
         };
-        let ValueExpr::Variable(varr) = self.ast.get_value_expr(r1).clone() else {
+        let ValueExpr::Variable(varr) = self.ast.value_exprs.get(r1).unwrap().clone() else {
             unreachable!();
         };
 
@@ -578,49 +605,65 @@ impl Analyzer {
         };
     }
 
-    fn _is_injective_inner(&self, expr_id: ValueExprId) -> Option<RangeItemInfo> {
-        let expr = self.ast.get_value_expr(expr_id).clone();
+    fn _is_injective_inner(&self, expr_id: ValueExprKey) -> Option<RangeItemInfo> {
+        let expr = self.ast.value_exprs.get(expr_id).unwrap().clone();
 
         match expr {
             ValueExpr::Add(varl, varr) => {
-                let (num, valexpr) =
-                    match (self.ast.get_value_expr(varl), self.ast.get_value_expr(varr)) {
-                        (ValueExpr::IntagerLiteral(n), ..) => (n, varr),
-                        (.., ValueExpr::IntagerLiteral(n)) => (n, varl),
-                        _ => return self._concat_range(varl, varr),
-                    };
+                let (num, valexpr) = match (
+                    self.ast.value_exprs.get(varl).unwrap(),
+                    self.ast.value_exprs.get(varr).unwrap(),
+                ) {
+                    (ValueExpr::IntagerLiteral(n), ..) => (n, varr),
+                    (.., ValueExpr::IntagerLiteral(n)) => (n, varl),
+                    _ => return self._concat_range(varl, varr),
+                };
 
                 let mut range_info = self._is_injective_inner(valexpr)?;
 
                 range_info.min += num;
                 range_info.max += num;
-                range_info.delta += num;
 
                 Some(range_info)
             }
             ValueExpr::Sub(varl, varr) => {
-                let (num, valexpr) =
-                    match (self.ast.get_value_expr(varl), self.ast.get_value_expr(varr)) {
-                        (ValueExpr::IntagerLiteral(n), ..) => (n, varr),
-                        (.., ValueExpr::IntagerLiteral(n)) => (n, varl),
-                        _ => return self._concat_range(varl, varr),
-                    };
+                let (num, valexpr) = match (
+                    self.ast.value_exprs.get(varl).unwrap(),
+                    self.ast.value_exprs.get(varr).unwrap(),
+                ) {
+                    (ValueExpr::IntagerLiteral(n), ..) => (n, varr),
+                    (.., ValueExpr::IntagerLiteral(n)) => (n, varl),
+                    _ => return self._concat_range(varl, varr),
+                };
 
                 let mut range_info = self._is_injective_inner(valexpr)?;
 
-                range_info.min -= num;
-                range_info.max -= num;
-                range_info.delta -= num;
+                match range_info {
+                    RangeItemInfo::Const(range_info) => {
+                        range_info.min -= num;
+                        range_info.max -= num;
+                    }
+                    RangeItemInfo::Var(range_info) => {
+                        range_info.min = ValueExprKey(self.tmp_value_exprs.len());
+
+                        self.tmp_value_exprs.push(ValueExpr::Sub(
+                            range_info.min,
+                            self.ast.value_exprs.push(ValueExpr::IntagerLiteral(*num)),
+                        ));
+                    }
+                }
 
                 Some(range_info)
             }
             ValueExpr::Mul(varl, varr) => {
-                let (num, valexpr) =
-                    match (self.ast.get_value_expr(varl), self.ast.get_value_expr(varr)) {
-                        (ValueExpr::IntagerLiteral(n), ..) => (n, varr),
-                        (.., ValueExpr::IntagerLiteral(n)) => (n, varl),
-                        _ => return self._concat_range(varl, varr),
-                    };
+                let (num, valexpr) = match (
+                    self.ast.value_exprs.get(varl).unwrap(),
+                    self.ast.value_exprs.get(varr).unwrap(),
+                ) {
+                    (ValueExpr::IntagerLiteral(n), ..) => (n, varr),
+                    (.., ValueExpr::IntagerLiteral(n)) => (n, varl),
+                    _ => return self._concat_range(varl, varr),
+                };
 
                 let mut range_info = self._is_injective_inner(valexpr)?;
 
@@ -637,12 +680,14 @@ impl Analyzer {
                 return Some(range_info);
             }
             ValueExpr::Div(varl, varr) => {
-                let (num, valexpr) =
-                    match (self.ast.get_value_expr(varl), self.ast.get_value_expr(varr)) {
-                        (ValueExpr::IntagerLiteral(n), ..) => (n, varr),
-                        (.., ValueExpr::IntagerLiteral(n)) => (n, varl),
-                        _ => return self._concat_range(varl, varr),
-                    };
+                let (num, valexpr) = match (
+                    self.ast.value_exprs.get(varl).unwrap(),
+                    self.ast.value_exprs.get(varr).unwrap(),
+                ) {
+                    (ValueExpr::IntagerLiteral(n), ..) => (n, varr),
+                    (.., ValueExpr::IntagerLiteral(n)) => (n, varl),
+                    _ => return self._concat_range(varl, varr),
+                };
 
                 let mut range_info = self._is_injective_inner(valexpr)?;
 
@@ -663,48 +708,52 @@ impl Analyzer {
         }
     }
 
-    fn try_const_folding(&mut self, expr_id: ValueExprId) {
-        let expr = self.ast.get_value_expr(expr_id).clone();
+    fn try_const_folding(&mut self, expr_id: ValueExprKey) {
+        let expr = self.ast.value_exprs.get(expr_id).unwrap().clone();
 
         match expr {
             ValueExpr::Add(varl, varr) => {
                 self.try_const_folding(varl);
                 self.try_const_folding(varr);
 
-                if let (ValueExpr::IntagerLiteral(varl), ValueExpr::IntagerLiteral(varr)) =
-                    (self.ast.get_value_expr(varl), self.ast.get_value_expr(varr))
-                {
-                    self.ast.value_exprs[expr_id.0] = ValueExpr::IntagerLiteral(varl + varr);
+                if let (ValueExpr::IntagerLiteral(varl), ValueExpr::IntagerLiteral(varr)) = (
+                    self.ast.value_exprs.get(varl).unwrap(),
+                    self.ast.value_exprs.get(varr).unwrap(),
+                ) {
+                    self.ast.value_exprs[expr_id] = ValueExpr::IntagerLiteral(varl + varr);
                 }
             }
             ValueExpr::Sub(varl, varr) => {
                 self.try_const_folding(varl);
                 self.try_const_folding(varr);
 
-                if let (ValueExpr::IntagerLiteral(varl), ValueExpr::IntagerLiteral(varr)) =
-                    (self.ast.get_value_expr(varl), self.ast.get_value_expr(varr))
-                {
-                    self.ast.value_exprs[expr_id.0] = ValueExpr::IntagerLiteral(varl - varr);
+                if let (ValueExpr::IntagerLiteral(varl), ValueExpr::IntagerLiteral(varr)) = (
+                    self.ast.value_exprs.get(varl).unwrap(),
+                    self.ast.value_exprs.get(varr).unwrap(),
+                ) {
+                    self.ast.value_exprs[expr_id] = ValueExpr::IntagerLiteral(varl - varr);
                 }
             }
             ValueExpr::Mul(varl, varr) => {
                 self.try_const_folding(varl);
                 self.try_const_folding(varr);
 
-                if let (ValueExpr::IntagerLiteral(varl), ValueExpr::IntagerLiteral(varr)) =
-                    (self.ast.get_value_expr(varl), self.ast.get_value_expr(varr))
-                {
-                    self.ast.value_exprs[expr_id.0] = ValueExpr::IntagerLiteral(varl * varr);
+                if let (ValueExpr::IntagerLiteral(varl), ValueExpr::IntagerLiteral(varr)) = (
+                    self.ast.value_exprs.get(varl).unwrap(),
+                    self.ast.value_exprs.get(varr).unwrap(),
+                ) {
+                    self.ast.value_exprs[expr_id] = ValueExpr::IntagerLiteral(varl * varr);
                 }
             }
             ValueExpr::Div(varl, varr) => {
                 self.try_const_folding(varl);
                 self.try_const_folding(varr);
 
-                if let (ValueExpr::IntagerLiteral(varl), ValueExpr::IntagerLiteral(varr)) =
-                    (self.ast.get_value_expr(varl), self.ast.get_value_expr(varr))
-                {
-                    self.ast.value_exprs[expr_id.0] = ValueExpr::IntagerLiteral(varl / varr);
+                if let (ValueExpr::IntagerLiteral(varl), ValueExpr::IntagerLiteral(varr)) = (
+                    self.ast.value_exprs.get(varl).unwrap(),
+                    self.ast.value_exprs.get(varr).unwrap(),
+                ) {
+                    self.ast.value_exprs[expr_id] = ValueExpr::IntagerLiteral(varl / varr);
                 }
             }
             _ => {}

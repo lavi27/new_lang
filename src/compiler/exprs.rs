@@ -7,85 +7,74 @@
 //     fn visit_namespace_tree(&mut self, expr: &NamespaceTree);
 // }
 
-use crate::compiler::{codegen::ToRust, parser::SyntaxTree};
+use slotmap::new_key_type;
 
-#[derive(Clone, Copy)]
-pub struct ExprId(pub usize);
-
-
-
-#[derive(Clone, Copy)]
-pub struct ValueExprId(pub usize);
-
-
-
-#[derive(Clone, Copy)]
-pub struct CodeBlockId(pub usize);
-
-
+new_key_type! { pub struct ExprKey; }
+new_key_type! { pub struct ValueExprKey; }
+new_key_type! { pub struct CodeBlockKey; }
 
 #[derive(Clone)]
 pub enum Expr {
     EqualAssign {
-        variable: ValueExprId,
-        value: ValueExprId,
+        variable: ValueExprKey,
+        value: ValueExprKey,
     },
     AddAssign {
-        variable: ValueExprId,
-        value: ValueExprId,
+        variable: ValueExprKey,
+        value: ValueExprKey,
     },
     SubAssign {
-        variable: ValueExprId,
-        value: ValueExprId,
+        variable: ValueExprKey,
+        value: ValueExprKey,
     },
     MulAssign {
-        variable: ValueExprId,
-        value: ValueExprId,
+        variable: ValueExprKey,
+        value: ValueExprKey,
     },
     DivAssign {
-        variable: ValueExprId,
-        value: ValueExprId,
+        variable: ValueExprKey,
+        value: ValueExprKey,
     },
     If {
-        condition: ValueExprId,
-        if_body: CodeBlockId,
-        else_body: Option<CodeBlockId>,
+        condition: ValueExprKey,
+        if_body: CodeBlockKey,
+        else_body: Option<CodeBlockKey>,
     },
     ForIn {
         iter_item: VariableDefineExpr,
-        iter: ValueExprId,
-        iter_body: CodeBlockId,
-        remain_body: Option<CodeBlockId>,
+        iter: ValueExprKey,
+        iter_body: CodeBlockKey,
+        remain_body: Option<CodeBlockKey>,
     },
     ParalForIn {
         iter_item: VariableDefineExpr,
-        iter: ValueExprId,
-        iter_body: CodeBlockId,
-        remain_body: Option<CodeBlockId>,
+        iter: ValueExprKey,
+        iter_body: CodeBlockKey,
+        remain_body: Option<CodeBlockKey>,
     },
     While {
-        condition: ValueExprId,
-        body: CodeBlockId,
+        condition: ValueExprKey,
+        body: CodeBlockKey,
     },
     VariableLet {
         define_expr: VariableDefineExpr,
-        value: ValueExprId,
+        value: ValueExprKey,
     },
     VariableVar {
         define_expr: VariableDefineExpr,
-        value: ValueExprId,
+        value: ValueExprKey,
     },
     FnDefine {
         name: String,
         type_args: Option<Vec<String>>,
         return_type: TypeExpr,
         args: Vec<VariableDefineExpr>,
-        body: CodeBlockId,
+        body: CodeBlockKey,
     },
-    Return(ValueExprId),
-    ReturnExpr(ExprId),
-    ValueExpr(ValueExprId),
-    CodeBlock(CodeBlockId),
+    Return(ValueExprKey),
+    ReturnExpr(ExprKey),
+    ValueExpr(ValueExprKey),
+    CodeBlock(CodeBlockKey),
     VariableDefineExpr(VariableDefineExpr),
     TypeExpr(TypeExpr),
     NamespaceChain(NamespaceChain),
@@ -98,57 +87,58 @@ pub enum ValueExpr {
     IntagerLiteral(i64),
     FloatLiteral(f64),
     StringLiteral(String),
-    Add(ValueExprId, ValueExprId),
-    Sub(ValueExprId, ValueExprId),
-    Mul(ValueExprId, ValueExprId),
-    Div(ValueExprId, ValueExprId),
-    Remainder(ValueExprId, ValueExprId),
-    LessThan(ValueExprId, ValueExprId),
-    GreaterThan(ValueExprId, ValueExprId),
+    Add(ValueExprKey, ValueExprKey),
+    Sub(ValueExprKey, ValueExprKey),
+    Mul(ValueExprKey, ValueExprKey),
+    Div(ValueExprKey, ValueExprKey),
+    Remainder(ValueExprKey, ValueExprKey),
+    LessThan(ValueExprKey, ValueExprKey),
+    GreaterThan(ValueExprKey, ValueExprKey),
     Reference {
-        value: ValueExprId,
+        value: ValueExprKey,
         is_mut: bool,
     },
-    Dereference(ValueExprId),
-    BoolAnd(ValueExprId, ValueExprId),
-    BoolOr(ValueExprId, ValueExprId),
-    BoolEqual(ValueExprId, ValueExprId),
-    BoolNotEqual(ValueExprId, ValueExprId),
-    Tuple(Vec<ValueExprId>),
+    Dereference(ValueExprKey),
+    BoolAnd(ValueExprKey, ValueExprKey),
+    BoolOr(ValueExprKey, ValueExprKey),
+    BoolEqual(ValueExprKey, ValueExprKey),
+    BoolNotEqual(ValueExprKey, ValueExprKey),
+    Tuple(Vec<ValueExprKey>),
+    GroupingParen(ValueExprKey),
     Variable(String),
     Indexing {
-        value: ValueExprId,
-        index: ValueExprId,
+        value: ValueExprKey,
+        index: ValueExprKey,
     },
     As {
-        value: ValueExprId,
+        value: ValueExprKey,
         type_: Box<TypeExpr>,
     },
     Range {
-        start: ValueExprId,
-        end: ValueExprId,
+        start: ValueExprKey,
+        end: ValueExprKey,
         is_inclusive: bool,
     },
     FnCall {
         namespace: NamespaceChain,
         name: String,
         type_args: Option<Vec<TypeExpr>>,
-        args: Vec<ValueExprId>,
+        args: Vec<ValueExprKey>,
     },
     ObjectField {
-        objcet: ValueExprId,
+        objcet: ValueExprKey,
         field: String,
     },
     MethodCall {
-        object: ValueExprId,
+        object: ValueExprKey,
         method: String,
         type_args: Option<Vec<TypeExpr>>,
-        args: Vec<ValueExprId>,
+        args: Vec<ValueExprKey>,
     },
     MacroCall {
         namespace: NamespaceChain,
         name: String,
-        args: Vec<ValueExprId>,
+        args: Vec<ValueExprKey>,
     },
 }
 
@@ -182,4 +172,4 @@ impl NamespaceChain {
 }
 
 #[derive(Clone)]
-pub struct CodeBlock(pub Vec<ExprId>);
+pub struct CodeBlock(pub Vec<ExprKey>);
