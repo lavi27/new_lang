@@ -82,7 +82,7 @@ pub enum Expr {
     NamespaceUse(NamespaceTree),
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum ValueExpr {
     IntagerLiteral(i64),
     FloatLiteral(f64),
@@ -162,7 +162,7 @@ pub enum TypeExpr {
 #[derive(Clone)]
 pub struct NamespaceTree(pub Vec<String>, pub Option<Vec<NamespaceTree>>);
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct NamespaceChain(pub Vec<String>);
 
 impl NamespaceChain {
