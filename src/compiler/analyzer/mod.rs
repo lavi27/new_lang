@@ -1,14 +1,19 @@
-use std::mem::take;
-
 use ahash::{HashMap, HashMapExt};
 
-use crate::compiler::{exprs::*, parser::SyntaxTree};
+use crate::{
+    compiler::{exprs::*, parser::SyntaxTree},
+    none_to_err,
+};
 
 type Var = String;
 
 enum StaticItem {
     Module(Module),
-    Func{name: String, type_args: Vec<String>, return_type: TypeExpr},
+    Func {
+        name: String,
+        type_args: Vec<String>,
+        return_type: TypeExpr,
+    },
 }
 
 struct Module {
@@ -23,64 +28,70 @@ struct RangeItemInfo {
     max: i64,
 }
 
+struct ScopeInfo {
+    vars: HashMap<Var, TypeExpr>,
+    is_chunkable: bool,
+}
+
 pub struct Analyzer {
-    ast: SyntaxTree,
-    scope_stack: Vec<HashMap<Var, TypeExpr>>,
+    scope_stack: Vec<ScopeInfo>,
     static_items: HashMap<String, StaticItem>,
-    scope_info: HashMap<CodeBlock, (usize)>,
     range_item_info: HashMap<String, RangeItemInfo>,
-    is_in_loop: bool,
 }
 
 impl Analyzer {
     pub fn analyze_static(ast: SyntaxTree) -> SyntaxTree {
-        let mut analyzer = Self::new(ast);
-        analyzer.analyze()
+        let mut analyzer = Self::new();
+        analyzer.analyze(ast)
     }
 
-    pub fn new(ast: SyntaxTree) -> Self {
+    pub fn new() -> Self {
         let mut children = HashMap::new();
-        children.insert("with_capacity".to_string(), StaticItem::Func{
-            name: "with_capacity".into(),
-            type_args: vec!["T".into()],
-            return_type: TypeExpr::WithArgs("Vec".into(), vec![TypeExpr::Name("T".into())])
-        });
+        children.insert(
+            "with_capacity".to_string(),
+            StaticItem::Func {
+                name: "with_capacity".into(),
+                type_args: vec!["T".into()],
+                return_type: TypeExpr::WithArgs("Vec".into(), vec![TypeExpr::Name("T".into())]),
+            },
+        );
 
-        children.insert("new".to_string(), StaticItem::Func{
-            name: "new".into(),
-            type_args: vec!["T".into()],
-            return_type: TypeExpr::WithArgs("Vec".into(), vec![TypeExpr::Name("T".into())])
-        });
+        children.insert(
+            "new".to_string(),
+            StaticItem::Func {
+                name: "new".into(),
+                type_args: vec!["T".into()],
+                return_type: TypeExpr::WithArgs("Vec".into(), vec![TypeExpr::Name("T".into())]),
+            },
+        );
 
         let mut static_items = HashMap::new();
-        static_items.insert("Vec".to_string(),
+        static_items.insert(
+            "Vec".to_string(),
             StaticItem::Module(Module {
                 name: "Vec".into(),
                 children,
-            })
+            }),
         );
 
         Self {
-            ast,
             scope_stack: Vec::new(),
             static_items,
-            is_in_loop: false,
             range_item_info: HashMap::new(),
-            scope_info: HashMap::new(),
         }
     }
 
-    pub fn analyze(&mut self) -> SyntaxTree {
-        self._analyze_routine( &self.ast.main_routine);
+    pub fn analyze(&mut self, mut ast: SyntaxTree) -> SyntaxTree {
+        self._analyze_routine(&mut ast.main_routine);
 
-        take(&mut self.ast)
+        ast
     }
 
     // ---
 
     fn find_value_from_scopes(&self, name: &String) -> Option<TypeExpr> {
         for scope in self.scope_stack.iter().rev() {
-            if let Some(res) = scope.get(name) {
+            if let Some(res) = scope.vars.get(name) {
                 return Some(res.clone());
             }
         }
@@ -90,7 +101,7 @@ impl Analyzer {
 
     fn find_value_scope_floor(&self, name: &String) -> Option<usize> {
         for (i, scope) in self.scope_stack.iter().enumerate().rev() {
-            if let Some(..) = scope.get(name) {
+            if matches!(scope.vars.get(name), Some(..)) {
                 return Some(i);
             }
         }
@@ -101,12 +112,8 @@ impl Analyzer {
     fn get_type_of_value(&mut self, expr: &ValueExpr) -> Option<TypeExpr> {
         match expr {
             ValueExpr::Add(varl, varr) => {
-                let Some(typel) = self.get_type_of_value(varl) else {
-                    return None;
-                };
-                let Some(typer) = self.get_type_of_value(varr) else {
-                    return None;
-                };
+                let typel = self.get_type_of_value(varl)?;
+                let typer = self.get_type_of_value(varr)?;
 
                 if typel == typer {
                     Some(typel)
@@ -115,12 +122,8 @@ impl Analyzer {
                 }
             }
             ValueExpr::Sub(varl, varr) => {
-                let Some(typel) = self.get_type_of_value(varl) else {
-                    return None;
-                };
-                let Some(typer) = self.get_type_of_value(varr) else {
-                    return None;
-                };
+                let typel = self.get_type_of_value(varl)?;
+                let typer = self.get_type_of_value(varr)?;
 
                 if typel == typer {
                     Some(typel)
@@ -129,12 +132,8 @@ impl Analyzer {
                 }
             }
             ValueExpr::Mul(varl, varr) => {
-                let Some(typel) = self.get_type_of_value(varl) else {
-                    return None;
-                };
-                let Some(typer) = self.get_type_of_value(varr) else {
-                    return None;
-                };
+                let typel = self.get_type_of_value(varl)?;
+                let typer = self.get_type_of_value(varr)?;
 
                 if typel == typer {
                     Some(typel)
@@ -143,12 +142,8 @@ impl Analyzer {
                 }
             }
             ValueExpr::Div(varl, varr) => {
-                let Some(typel) = self.get_type_of_value(varl) else {
-                    return None;
-                };
-                let Some(typer) = self.get_type_of_value(varr) else {
-                    return None;
-                };
+                let typel = self.get_type_of_value(varl)?;
+                let typer = self.get_type_of_value(varr)?;
 
                 if typel == typer {
                     Some(typel)
@@ -156,15 +151,21 @@ impl Analyzer {
                     None
                 }
             }
-            ValueExpr::FnCall { name, type_args, .. } => {
-                let Some(StaticItem::Func { return_type, type_args: type_args_signature, .. }) = self.static_items.get(name) else {
+            ValueExpr::FnCall {
+                name, type_args, ..
+            } => {
+                let Some(StaticItem::Func {
+                    return_type,
+                    type_args: type_args_signature,
+                    ..
+                }) = self.static_items.get(name)
+                else {
                     return None;
                 };
 
                 let mut return_type = return_type;
 
-                if let TypeExpr::Name(name) = return_type {
-                if let Some(type_args) = type_args {
+                if let (TypeExpr::Name(name), Some(type_args)) = (return_type, type_args) {
                     for (arg_sig, arg) in type_args_signature.iter().zip(type_args.iter()) {
                         if name == arg_sig {
                             return_type = arg;
@@ -172,123 +173,188 @@ impl Analyzer {
                         }
                     }
                 }
-                }
 
                 Some(return_type.clone())
             }
-            ValueExpr::Variable(name) => {
-                self.find_value_from_scopes(name)
-            }
-            _ => None
+            ValueExpr::Variable(name) => self.find_value_from_scopes(name),
+            _ => None,
         }
     }
 
-    fn get_define_type(&mut self, expr: &VariableDefineExpr) -> Option<TypeExpr> {
-        match expr {
-            VariableDefineExpr::One { type_, .. } => {
-                type_.clone()
-            }
-            _ => None
-        }
-    }
-
-    fn analyze_for_in(&mut self, iter_item: &VariableDefineExpr, iter: &ValueExpr, iter_body: &CodeBlock) {
-        if self.is_in_loop {
-            return;
-        }
+    fn analyze_for_in(&mut self, expr: &mut Expr) -> Result<(), ()> {
+        let Expr::ForIn {
+            iter_item,
+            iter,
+            iter_body,
+            remain_body,
+        } = expr
+        else {
+            unreachable!();
+        };
 
         let mut scope = HashMap::new();
-        let mut try_chunk = false;
+        let mut is_paralable = false;
+        let mut is_range_info_inserted = false;
 
-        let VariableDefineExpr::One { name: iter_item, .. } = iter_item else {
-            return;
+        let VariableDefineExpr::One {
+            name: iter_item_name,
+            ..
+        } = iter_item
+        else {
+            return Err(());
         };
 
         match iter {
-            ValueExpr::Range {start, end, is_inclusive} => {
-                scope.insert(iter_item.into(), TypeExpr::Name("usize".into()));
+            ValueExpr::Range {
+                start,
+                end,
+                is_inclusive,
+            } => {
+                scope.insert(iter_item_name.clone(), TypeExpr::Name("usize".into()));
 
-                if let ValueExpr::IntagerLiteral(start) = start.as_ref() {
-                if let ValueExpr::IntagerLiteral(end) = end.as_ref() {
-                    try_chunk = true;
+                if let (ValueExpr::IntagerLiteral(start), ValueExpr::IntagerLiteral(end)) =
+                    (start.as_ref(), end.as_ref())
+                {
+                    is_paralable = true;
+                    is_range_info_inserted = true;
 
-                    let end = if !*is_inclusive {
-                        *end-1
-                    } else {
-                        *end
+                    let mut end = *end;
+                    if !*is_inclusive {
+                        end -= 1
                     };
 
-                    self.range_item_info.insert(iter_item.into(), RangeItemInfo {
-                        delta: 1,
-                        min: *start.min(&end),
-                        max: *start.max(&end),
-                    });
-                }
+                    self.range_item_info.insert(
+                        iter_item_name.clone(),
+                        RangeItemInfo {
+                            delta: 1,
+                            min: *start.min(&end),
+                            max: *start.max(&end),
+                        },
+                    );
                 }
             }
             ValueExpr::Variable(var) => {
-                let Some(TypeExpr::WithArgs(typename, typeargs)) = self.find_value_from_scopes(var) else {
-                    return;
+                let Some(TypeExpr::WithArgs(typename, typeargs)) = self.find_value_from_scopes(var)
+                else {
+                    return Err(());
                 };
                 if typename != "Vec" {
-                    return;
+                    return Err(());
                 };
 
-                scope.insert(iter_item.into(), typeargs[0].clone());
+                scope.insert(iter_item_name.clone(), typeargs[0].clone());
             }
-            _ => return
+            _ => return Err(()),
         };
-        
-        self.is_in_loop = true;            
-        self.goto_scope(&iter_body.0, scope);
-        self.is_in_loop = false;
 
-        if try_chunk {
-            self.range_item_info.remove(iter_item);
+        if self.goto_scope(&mut iter_body.0, scope).is_err() {
+            is_paralable = false;
+        };
+
+        if is_range_info_inserted {
+            self.range_item_info.remove(iter_item_name);
         }
+
+        if is_paralable {
+            expr = &mut Expr::ParalForIn {
+                iter_item: iter_item.clone(),
+                iter: iter.clone(),
+                iter_body: iter_body.clone(),
+                remain_body: remain_body.clone(),
+            };
+        };
+
+        Ok(())
     }
 
-    fn analyze_expr(&mut self, expr: &Expr) {
+    fn analyze_value_expr(&mut self, expr: &mut ValueExpr) -> Result<(), ()> {
         match expr {
-            Expr::VariableLet { define_expr, value } => {
+            ValueExpr::FnCall { name, args, .. } => {
+                for arg in args {
+                    self.analyze_value_expr(arg)?;
+                }
+
+                if self.static_items.get(name).is_none() {
+                    return Err(());
+                };
+            }
+            ValueExpr::Variable(var) => {
+                let scope_floor = none_to_err!(self.find_value_scope_floor(var), ());
+                let var_type = none_to_err!(self.find_value_from_scopes(var), ());
+
+                if scope_floor < self.scope_stack.len() - 1 {
+                    if TypeExpr::Name("usize".into()) != var_type {
+                        return Err(());
+                    };
+                }
+            }
+            ValueExpr::As { value, .. } => {
+                self.analyze_value_expr(value)?;
+            }
+            ValueExpr::Indexing { index, .. } => {
+                self.analyze_value_expr(index)?;
+            }
+            ValueExpr::Add(varl, varr)
+            | ValueExpr::Sub(varl, varr)
+            | ValueExpr::Mul(varl, varr)
+            | ValueExpr::Div(varl, varr)
+            | ValueExpr::GreaterThan(varl, varr)
+            | ValueExpr::LessThan(varl, varr)
+            | ValueExpr::BoolAnd(varl, varr)
+            | ValueExpr::BoolOr(varl, varr) => {
+                self.analyze_value_expr(varl.as_mut())?;
+                self.analyze_value_expr(varr.as_mut())?;
+            }
+            _ => return Err(()),
+        };
+
+        Ok(())
+    }
+
+    fn analyze_expr(&mut self, expr: &mut Expr) -> Result<(), ()> {
+        match expr {
+            Expr::VariableLet { define_expr, value } | Expr::VariableVar { define_expr, value } => {
                 let VariableDefineExpr::One {
-                    name,
+                    type_,
+                    name: var_name,
                     ..
                 } = define_expr
                 else {
-                    return;
+                    return Err(());
                 };
 
-                let type_ = if let Some(res) = self.get_define_type(define_expr) {
+                let var_type = if let Some(res) = type_ {
                     res.clone()
                 } else if let Some(res) = self.get_type_of_value(value) {
                     res
                 } else {
-                    return;
+                    return Err(());
                 };
 
-                self.scope_stack.last_mut().unwrap().insert(name.clone(), type_);
+                self.scope_stack
+                    .last_mut()
+                    .unwrap()
+                    .vars
+                    .insert(var_name.clone(), var_type);
             }
-            Expr::VariableVar { define_expr, value } => {
-                let VariableDefineExpr::One {
-                    is_mut,
-                    name,
-                    type_,
-                } = define_expr
-                else {
-                    return;
-                };
+            Expr::ValueExpr(expr) => {
+                self.analyze_value_expr(expr)?;
+            }
+            Expr::EqualAssign { variable, value } => {
+                self.analyze_value_expr(value)?;
 
-                let type_ = if let Some(res) = type_ {
-                    res.clone()
-                } else if let Some(res) = self.get_type_of_value(value) {
-                    res
-                } else {
-                    return;
-                };
-
-
-                self.scope_stack.last_mut().unwrap().insert(name.clone(), type_);
+                match variable {
+                    ValueExpr::Indexing { index, .. } => {
+                        self.analyze_value_expr(index)?;
+                        if !self.is_chunkable(index) {
+                            return Err(());
+                        };
+                    }
+                    ValueExpr::Variable(..) => {
+                        self.analyze_value_expr(variable)?;
+                    }
+                    _ => return Err(()),
+                }
             }
             Expr::FnDefine {
                 name,
@@ -298,138 +364,134 @@ impl Analyzer {
                 body,
             } => {
                 let mut scope = HashMap::new();
-                
+
                 for arg in args {
                     let VariableDefineExpr::One {
-                        is_mut,
                         name,
                         type_: Some(type_),
-                    } = arg else {
+                        ..
+                    } = arg
+                    else {
                         continue;
-                    };     
+                    };
 
                     scope.insert(name.clone(), type_.clone());
                 }
-                
-                self.goto_scope(&body.0, scope);
 
-                self.static_items.insert(name.clone(), StaticItem::Func {
-                    name: name.clone(),
-                    return_type: return_type.clone(),
-                    type_args: type_args.clone().unwrap_or(Vec::new()),
-                });
+                self.goto_scope(&mut body.0, scope)?;
+
+                self.static_items.insert(
+                    name.clone(),
+                    StaticItem::Func {
+                        name: name.clone(),
+                        return_type: return_type.clone(),
+                        type_args: type_args.clone().unwrap_or(Vec::new()),
+                    },
+                );
             }
-            Expr::ForIn {
-                iter_item,
-                iter,
-                iter_body,
-                ..
-            } => self.analyze_for_in(iter_item, iter, iter_body),
+            Expr::While { condition, .. } => {
+                self.analyze_value_expr(condition)?;
+            }
+            Expr::ForIn { .. } => {
+                self.analyze_for_in(expr)?;
+            }
             _ => {}
         }
+
+        Ok(())
     }
 
-    fn _analyze_routine(&mut self, routine: &Vec<Expr>) {
+    fn _analyze_routine(&mut self, routine: &mut Vec<Expr>) -> Result<(), ()> {
         for expr in routine {
-            self.analyze_expr(expr);
+            self.analyze_expr(expr)?;
         }
+
+        Ok(())
     }
 
-    fn goto_scope(&mut self, routine: &Vec<Expr>, scope: HashMap<String, TypeExpr>) {
-        self.scope_stack.push(scope);
-        self._analyze_routine(routine);
+    fn goto_scope(
+        &mut self,
+        routine: &mut Vec<Expr>,
+        scope: HashMap<String, TypeExpr>,
+    ) -> Result<(), ()> {
+        self.scope_stack.push(ScopeInfo {
+            vars: scope,
+            is_chunkable: true,
+        });
+        let res = self._analyze_routine(routine);
         self.scope_stack.pop();
+
+        res
     }
 
     fn is_chunkable(&self, expr: &mut ValueExpr) -> bool {
         self.try_const_folding(expr);
 
-        self.is_affine_form(expr)
-        && self.is_injective(expr)
+        self._is_affine_form(expr) && self._is_injective(expr)
     }
 
-    fn is_affine_form(&self, expr: &ValueExpr) -> bool {
+    fn _is_affine_form(&self, expr: &ValueExpr) -> bool {
         match expr {
-            ValueExpr::Add(varl, varr)
-            | ValueExpr::Sub(varl, varr) => {
-                self.is_affine_form(varl.as_ref())
-                && self.is_affine_form(varr.as_ref())
+            ValueExpr::Add(varl, varr) | ValueExpr::Sub(varl, varr) => {
+                self._is_affine_form(varl.as_ref()) && self._is_affine_form(varr.as_ref())
             }
             ValueExpr::Mul(varl, varr) => {
-                if let ValueExpr::IntagerLiteral(..) = varr.as_ref() {
-                    true
-                } else if let ValueExpr::IntagerLiteral(..) = varl.as_ref() {
-                    true
-                } else {
-                    false
-                }
+                matches!(varr.as_ref(), ValueExpr::IntagerLiteral(..))
+                    || matches!(varl.as_ref(), ValueExpr::IntagerLiteral(..))
             }
             ValueExpr::Div(.., varr) => {
-                if let ValueExpr::IntagerLiteral(..) = varr.as_ref() {
-                    true
-                } else {
-                    false
-                }
+                matches!(varr.as_ref(), ValueExpr::IntagerLiteral(..))
             }
-            ValueExpr::Variable(name) => {
-                if let Some(..) = self.range_item_info.get(name) {
-                    true
-                } else {
-                    false
-                }
-            }
+            ValueExpr::Variable(name) => self.range_item_info.get(name).is_some(),
             ValueExpr::IntagerLiteral(..) => true,
             _ => false,
         }
     }
 
-    fn is_injective(&self, expr: &ValueExpr) -> bool {
+    fn _is_injective(&self, expr: &ValueExpr) -> bool {
         self._is_injective_inner(expr).is_some()
     }
 
+    fn _concat_range(&self, r0: &ValueExpr, r1: &ValueExpr) -> Option<RangeItemInfo> {
+        let ValueExpr::Variable(varl) = r0 else {
+            unreachable!();
+        };
+        let ValueExpr::Variable(varr) = r1 else {
+            unreachable!();
+        };
+
+        let varl_floor = self.find_value_scope_floor(varl);
+        let varr_floor = self.find_value_scope_floor(varr);
+
+        let (range_parent, range_child) = if varl_floor > varr_floor {
+            (varr, varl)
+        } else {
+            (varl, varr)
+        };
+
+        let range_parent = self.range_item_info.get(range_parent).unwrap();
+        let range_child = self.range_item_info.get(range_child).unwrap();
+
+        if range_parent.delta.abs() as u64 > range_child.max.abs_diff(range_child.min) {
+            let min = range_child.min + range_parent.min;
+            let max = range_child.max + range_parent.max;
+
+            return Some(RangeItemInfo { delta: 0, min, max });
+        } else {
+            return None;
+        };
+    }
+
     fn _is_injective_inner(&self, expr: &ValueExpr) -> Option<RangeItemInfo> {
-        fn _add_range(&self, r0: &ValueExpr, r1: &ValueExpr) -> Option<RangeItemInfo> {
-            let ValueExpr::Variable(varl) = r0 else {
-                unreachable!();
-            };
-            let ValueExpr::Variable(varr) = r1 else {
-                unreachable!();
-            };
-            
-            let varl_floor = self.find_value_scope_floor(varl);
-            let varr_floor = self.find_value_scope_floor(varr);
-
-            let (range_parent, range_child) = if varl_floor > varr_floor {
-                (varr, varl)
-            } else {
-                (varl, varr)
-            };
-            
-            let range_parent = self.range_item_info.get(range_parent).unwrap();
-            let range_child = self.range_item_info.get(range_child).unwrap();
-
-            if range_parent.delta.abs() as u64 > range_child.max.abs_diff(range_child.min) {
-                return Some(RangeItemInfo { delta: 0, min: 0, max: 0 });
-            } else {
-                return None;
-            };
-        }
-        
-        fn aa() {
-
-        }
-
         match expr {
             ValueExpr::Add(varl, varr) => {
                 let (num, valexpr) = match (varl.as_ref(), varr.as_ref()) {
                     (ValueExpr::IntagerLiteral(n), e) => (n, e),
                     (e, ValueExpr::IntagerLiteral(n)) => (n, e),
-                    (r0, r1) => return _add_range(&self, r0, r1),
+                    (r0, r1) => return self._concat_range(r0, r1),
                 };
 
-                let Some(mut range_info) = self._is_injective_inner(valexpr.as_ref()) else {
-                    return None;
-                };
+                let mut range_info = self._is_injective_inner(valexpr)?;
 
                 range_info.min += num;
                 range_info.max += num;
@@ -441,12 +503,10 @@ impl Analyzer {
                 let (num, valexpr) = match (varl.as_ref(), varr.as_ref()) {
                     (ValueExpr::IntagerLiteral(n), e) => (n, e),
                     (e, ValueExpr::IntagerLiteral(n)) => (n, e),
-                    (r0, r1) => return self._add_range(r0, r1),
+                    (r0, r1) => return self._concat_range(r0, r1),
                 };
 
-                let Some(mut range_info) = self._is_injective_inner(valexpr) else {
-                    return None;
-                };
+                let mut range_info = self._is_injective_inner(valexpr)?;
 
                 range_info.min -= num;
                 range_info.max -= num;
@@ -461,13 +521,17 @@ impl Analyzer {
                     _ => return None,
                 };
 
-                let Some(mut range_info) = self._is_injective_inner(valexpr) else {
-                    return None;
-                };
+                let mut range_info = self._is_injective_inner(valexpr)?;
 
-                range_info.min *= num;
-                range_info.max *= num;
-                range_info.delta *= num;
+                if *num > 0 {
+                    range_info.min *= num;
+                    range_info.max *= num;
+                    range_info.delta *= num;
+                } else {
+                    range_info.min = range_info.max * num;
+                    range_info.max = range_info.min * num;
+                    range_info.delta *= num;
+                };
 
                 return Some(range_info);
             }
@@ -478,19 +542,21 @@ impl Analyzer {
                     _ => return None,
                 };
 
-                let Some(mut range_info) = self._is_injective_inner(valexpr) else {
-                    return None;
-                };
+                let mut range_info = self._is_injective_inner(valexpr)?;
 
-                range_info.min /= num;
-                range_info.max /= num;
-                range_info.delta /= num;
+                if *num > 0 {
+                    range_info.min /= num;
+                    range_info.max /= num;
+                    range_info.delta /= num;
+                } else {
+                    range_info.min = range_info.max / num;
+                    range_info.max = range_info.min / num;
+                    range_info.delta /= num;
+                };
 
                 return Some(range_info);
             }
-            ValueExpr::Variable(name) => {
-                self.range_item_info.get(name).map(|r| r.clone())
-            }
+            ValueExpr::Variable(name) => self.range_item_info.get(name).map(|r| r.clone()),
             _ => None,
         }
     }
@@ -501,47 +567,43 @@ impl Analyzer {
                 self.try_const_folding(varl);
                 self.try_const_folding(varr);
 
-                if let ValueExpr::IntagerLiteral(varl) = varl.as_ref() {
-                if let ValueExpr::IntagerLiteral(varr) = varr.as_ref() {
+                if let (ValueExpr::IntagerLiteral(varl), ValueExpr::IntagerLiteral(varr)) =
+                    (varl.as_ref(), varr.as_ref())
+                {
                     *expr = ValueExpr::IntagerLiteral(varl + varr);
-                }
                 }
             }
             ValueExpr::Sub(varl, varr) => {
                 self.try_const_folding(varl);
                 self.try_const_folding(varr);
 
-                if let ValueExpr::IntagerLiteral(varl) = varl.as_ref() {
-                if let ValueExpr::IntagerLiteral(varr) = varr.as_ref() {
+                if let (ValueExpr::IntagerLiteral(varl), ValueExpr::IntagerLiteral(varr)) =
+                    (varl.as_ref(), varr.as_ref())
+                {
                     *expr = ValueExpr::IntagerLiteral(varl - varr);
-                }
                 }
             }
             ValueExpr::Mul(varl, varr) => {
                 self.try_const_folding(varl);
                 self.try_const_folding(varr);
 
-                if let ValueExpr::IntagerLiteral(varl) = varl.as_ref() {
-                if let ValueExpr::IntagerLiteral(varr) = varr.as_ref() {
+                if let (ValueExpr::IntagerLiteral(varl), ValueExpr::IntagerLiteral(varr)) =
+                    (varl.as_ref(), varr.as_ref())
+                {
                     *expr = ValueExpr::IntagerLiteral(varl * varr);
-                }
                 }
             }
             ValueExpr::Div(varl, varr) => {
                 self.try_const_folding(varl);
                 self.try_const_folding(varr);
 
-                if let ValueExpr::IntagerLiteral(varl) = varl.as_ref() {
-                if let ValueExpr::IntagerLiteral(varr) = varr.as_ref() {
+                if let (ValueExpr::IntagerLiteral(varl), ValueExpr::IntagerLiteral(varr)) =
+                    (varl.as_ref(), varr.as_ref())
+                {
                     *expr = ValueExpr::IntagerLiteral(varl / varr);
-                }
                 }
             }
             _ => {}
         }
     }
 }
-
-// - 데이터 종속성 파악을 통한 simd 연산
-// - 스케줄링 구현
-// - 자동 스레딩

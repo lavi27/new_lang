@@ -1,16 +1,16 @@
 fn mandelbrot(width: usize, height: usize, iterations: usize): Vec<u32> {
-    var pixels = Vec::with_capacity<u32>(width * height);
-    for i in 0..width*height {
+    var pixels: Vec<u32> = Vec::with_capacity(width * height);
+    for i in 0..(width*height) {
       pixels.push(0);
     } 
     
     for y in 0..height {
         for x in 0..width {
-            let mut zx = 0.0;
-            let mut zy = 0.0;
+            var zx = 0.0;
+            var zy = 0.0;
             let cx = (x as f64 / width as f64) * 3.5 - 2.5;
             let cy = (y as f64 / height as f64) * 2.0 - 1.0;
-            let mut iter = 0;
+            var iter = 0;
             while zx * zx + zy * zy < 2.5 && iter < iterations {
                 let tmp = zx * zx - zy * zy + cx;
                 zy = 2.0 * zx * zy + cy;
@@ -20,43 +20,12 @@ fn mandelbrot(width: usize, height: usize, iterations: usize): Vec<u32> {
             pixels[y * width + x] = iter as u32;
         }
     }
-    pixels
+
+    return pixels;
 }
 
-if routine.min_dep_scope == 'curr_scope' nop.
-elif " < "
-  if var 'immut' ref.
-  if var.type 'primary' tobe atomic.
-
-  if var.type == Vec
-  && var 'write only'
-  && idx 'chunkable' chunk.
-
-def idx 'chunkable'
-  range 'all const or range' & 'affine form' & 'injective'
-
-def 식 'affine form'
-  dip match + | -
-    if left & right 'affine' true.
-  match *
-    if left & right isnt var true.
-  match /
-    if right is const true.
-  else false.
-
-def 식 'injective'
-  if left & right is const Const(n).
-
-  dip match + | -
-    if abs(left.delta) >= abs(right.max - right.min)
-    || " <= " true.
-  match *
-    var.delta *= const
-  match /
-    var.delta /= const
-
 fn main() {
-  var vec = Vec::with_capacity<usize>(1000);
+  var vec: Vec<usize> = Vec::with_capacity(1000);
   for i in 0..vec.capacity() {
     vec.push(i); 
   }
