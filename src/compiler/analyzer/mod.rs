@@ -275,6 +275,11 @@ impl Analyzer {
         }
 
         if is_paralable {
+            #[cfg(debug_assertions)]
+            {
+                eprintln!("optimized for-in");
+            }
+
             self.ast.exprs[expr_id.0] = Expr::ParalForIn {
                 iter_item: iter_item.clone(),
                 iter: iter.clone(),
@@ -343,6 +348,10 @@ impl Analyzer {
                     ..
                 } = define_expr
                 else {
+                    #[cfg(debug_assertions)]
+                    {
+                        eprintln!("optimize failed var assign (var define expr)");
+                    }
                     return Err(());
                 };
 
@@ -351,6 +360,10 @@ impl Analyzer {
                 } else if let Some(res) = self.get_type_of_value(value) {
                     res
                 } else {
+                    #[cfg(debug_assertions)]
+                    {
+                        eprintln!("optimize failed var assign (unknown type)");
+                    }
                     return Err(());
                 };
 
@@ -361,24 +374,58 @@ impl Analyzer {
                     .insert(var_name.clone(), var_type);
             }
             Expr::ValueExpr(expr) => {
-                self.analyze_value_expr(expr)?;
+                if self.analyze_value_expr(expr).is_err() {
+                    #[cfg(debug_assertions)]
+                    {
+                        eprintln!("optimize failed value expr");
+                    }
+                    return Err(());
+                };
             }
             Expr::EqualAssign { variable, value } => {
-                self.analyze_value_expr(value)?;
+                if self.analyze_value_expr(value).is_err() {
+                    #[cfg(debug_assertions)]
+                    {
+                        eprintln!("optimize failed equal assign value");
+                    }
+                    return Err(());
+                };
 
                 let var_ref = self.ast.get_value_expr(variable).clone();
 
                 match var_ref {
                     ValueExpr::Indexing { index, .. } => {
-                        self.analyze_value_expr(index)?;
+                        if self.analyze_value_expr(index).is_err() {
+                            #[cfg(debug_assertions)]
+                            {
+                                eprintln!("optimize failed indexing index");
+                            }
+                            return Err(());
+                        };
                         if !self.is_chunkable(index) {
+                            #[cfg(debug_assertions)]
+                            {
+                                eprintln!("optimize failed indexing chunking");
+                            }
                             return Err(());
                         };
                     }
                     ValueExpr::Variable(..) => {
-                        self.analyze_value_expr(variable)?;
+                        if self.analyze_value_expr(variable).is_err() {
+                            #[cfg(debug_assertions)]
+                            {
+                                eprintln!("optimize failed variable");
+                            }
+                            return Err(());
+                        };
                     }
-                    _ => return Err(()),
+                    _ => {
+                        #[cfg(debug_assertions)]
+                        {
+                            eprintln!("optimize failed equal assign");
+                        }
+                        return Err(());
+                    }
                 }
             }
             Expr::FnDefine {
@@ -415,10 +462,24 @@ impl Analyzer {
                 );
             }
             Expr::While { condition, .. } => {
-                self.analyze_value_expr(condition)?;
+                if self.analyze_value_expr(condition).is_err() {
+                    #[cfg(debug_assertions)]
+                    {
+                        eprintln!("optimize failed while condition");
+                    }
+
+                    return Err(());
+                };
             }
             Expr::ForIn { .. } => {
-                self.analyze_for_in(expr_id)?;
+                if self.analyze_for_in(expr_id).is_err() {
+                    #[cfg(debug_assertions)]
+                    {
+                        eprintln!("optimize failed for in");
+                    }
+
+                    return Err(());
+                };
             }
             _ => {}
         }
