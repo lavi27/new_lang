@@ -6,22 +6,39 @@ use std::{
     panic::{self, AssertUnwindSafe},
 };
 
-use crate::{
-    compiler::{codegen::ToRust, exprs::*},
-    s,
-};
+use crate::{compiler::exprs::*, s};
 
 use token_stream::*;
 
 pub struct SyntaxTree {
-    pub main_routine: Vec<Expr>,
+    pub main_routine: Vec<ExprId>,
+    pub exprs: Vec<Expr>,
+    pub value_exprs: Vec<ValueExpr>,
+    pub code_blocks: Vec<CodeBlock>,
     pub is_threading_used: bool,
+}
+
+impl SyntaxTree {
+    pub fn get_expr(&self, id: ExprId) -> &Expr {
+        &self.exprs[id.0]
+    }
+
+    pub fn get_value_expr(&self, id: ValueExprId) -> &ValueExpr {
+        &self.value_exprs[id.0]
+    }
+
+    pub fn get_code_block(&self, id: CodeBlockId) -> &CodeBlock {
+        &self.code_blocks[id.0]
+    }
 }
 
 impl Default for SyntaxTree {
     fn default() -> Self {
         Self {
             main_routine: Vec::new(),
+            exprs: Vec::new(),
+            value_exprs: Vec::new(),
+            code_blocks: Vec::new(),
             is_threading_used: false,
         }
     }
@@ -138,10 +155,31 @@ impl Parser {
         }
     }
 
+    fn alloc_expr(&mut self, expr: Expr) -> ExprId {
+        let id = self.result.exprs.len();
+        self.result.exprs.push(expr);
+
+        ExprId(id)
+    }
+
+    fn alloc_value_expr(&mut self, expr: ValueExpr) -> ValueExprId {
+        let id = self.result.value_exprs.len();
+        self.result.value_exprs.push(expr);
+
+        ValueExprId(id)
+    }
+
+    fn alloc_codeblock(&mut self, expr: CodeBlock) -> CodeBlockId {
+        let id = self.result.code_blocks.len();
+        self.result.code_blocks.push(expr);
+
+        CodeBlockId(id)
+    }
+
     // # PARSE_COMMA_- METHODS #
     // 콤마로 나뉜 표현식을 처리하기 위해 특화된 저수준 매서드.
 
-    fn parse_comma_value_exprs(&mut self, end_token: Token) -> Vec<ValueExpr> {
+    fn parse_comma_value_exprs(&mut self, end_token: Token) -> Vec<ValueExprId> {
         let mut items = Vec::new();
 
         if self.is_next_token(end_token.clone()) {
@@ -313,7 +351,7 @@ impl Parser {
         &mut self,
         fn_name: String,
         namespace: NamespaceChain,
-    ) -> Option<ValueExpr> {
+    ) -> Option<ValueExprId> {
         let type_args = self.try_parse_type_args();
 
         if (self.token_stream.peek() != Some(Token::LeftParen)) && type_args.is_none() {
@@ -323,15 +361,15 @@ impl Parser {
         self.assert_next_token(Token::LeftParen);
         let args = self.parse_comma_value_exprs(Token::RightParen);
 
-        Some(ValueExpr::FnCall {
+        Some(self.alloc_value_expr(ValueExpr::FnCall {
             namespace,
             name: fn_name,
             type_args,
             args,
-        })
+        }))
     }
 
-    fn try_parse_macro(&mut self, name: String, namespace: NamespaceChain) -> Option<ValueExpr> {
+    fn try_parse_macro(&mut self, name: String, namespace: NamespaceChain) -> Option<ValueExprId> {
         if !self.is_next_token(Token::Exclamationmark) {
             return None;
         }
@@ -344,19 +382,19 @@ impl Parser {
             return None;
         };
 
-        Some(ValueExpr::MacroCall {
+        Some(self.alloc_value_expr(ValueExpr::MacroCall {
             namespace,
             name,
             args,
-        })
+        }))
     }
 
     fn _try_parse_infix_value_exprs_recursive(
         &mut self,
-        left_val: ValueExpr,
+        left_val: ValueExprId,
         min_priority: usize,
-    ) -> ValueExpr {
-        let mut result = left_val.clone();
+    ) -> ValueExprId {
+        let mut result = left_val;
 
         loop {
             let Some(infix_token) = self.token_stream.peek() else {
@@ -382,10 +420,11 @@ impl Parser {
 
             if let Token::String(string) = infix_token {
                 if string == "as" {
-                    result = ValueExpr::As {
-                        value: Box::new(left_val.clone()),
+                    let result_tmp = ValueExpr::As {
+                        value: left_val,
                         type_: Box::new(self.parse_type_expr()),
                     };
+                    result = self.alloc_value_expr(result_tmp);
 
                     continue;
                 } else {
@@ -395,43 +434,29 @@ impl Parser {
 
             let right_val = self.parse_single_value_expr();
 
-            let right_val =
-                self._try_parse_infix_value_exprs_recursive(right_val.clone(), priority);
+            let right_val = self._try_parse_infix_value_exprs_recursive(right_val, priority);
 
-            result = match infix_token {
-                Token::Plus => ValueExpr::Add(Box::new(result.clone()), Box::new(right_val)),
-                Token::Minus => ValueExpr::Sub(Box::new(result.clone()), Box::new(right_val)),
-                Token::Asterisk => ValueExpr::Mul(Box::new(result.clone()), Box::new(right_val)),
-                Token::Slash => ValueExpr::Div(Box::new(result.clone()), Box::new(right_val)),
-                Token::Percent => {
-                    ValueExpr::Remainder(Box::new(result.clone()), Box::new(right_val))
-                }
-                Token::BoolAnd => {
-                    ValueExpr::BoolAnd(Box::new(result.clone()), Box::new(right_val.clone()))
-                }
-                Token::BoolOr => {
-                    ValueExpr::BoolOr(Box::new(result.clone()), Box::new(right_val.clone()))
-                }
-                Token::BoolEqual => {
-                    ValueExpr::BoolEqual(Box::new(result.clone()), Box::new(right_val.clone()))
-                }
-                Token::BoolNotEqual => {
-                    ValueExpr::BoolNotEqual(Box::new(result.clone()), Box::new(right_val.clone()))
-                }
-                Token::LeftAngleBracket => {
-                    ValueExpr::GreaterThan(Box::new(result.clone()), Box::new(right_val.clone()))
-                }
-                Token::RightAngleBracket => {
-                    ValueExpr::LessThan(Box::new(result.clone()), Box::new(right_val.clone()))
-                }
+            let result_tmp = match infix_token {
+                Token::Plus => ValueExpr::Add(result, right_val),
+                Token::Minus => ValueExpr::Sub(result, right_val),
+                Token::Asterisk => ValueExpr::Mul(result, right_val),
+                Token::Slash => ValueExpr::Div(result, right_val),
+                Token::Percent => ValueExpr::Remainder(result, right_val),
+                Token::BoolAnd => ValueExpr::BoolAnd(result, right_val),
+                Token::BoolOr => ValueExpr::BoolOr(result, right_val),
+                Token::BoolEqual => ValueExpr::BoolEqual(result, right_val),
+                Token::BoolNotEqual => ValueExpr::BoolNotEqual(result, right_val),
+                Token::LeftAngleBracket => ValueExpr::GreaterThan(result, right_val),
+                Token::RightAngleBracket => ValueExpr::LessThan(result, right_val),
                 _ => panic!("This compiler sucks."),
             };
+            result = self.alloc_value_expr(result_tmp)
         }
 
         result
     }
 
-    fn try_parse_infix_value_exprs(&mut self, first: ValueExpr) -> Option<ValueExpr> {
+    fn try_parse_infix_value_exprs(&mut self, first: ValueExprId) -> Option<ValueExprId> {
         let Some(infix_token) = self.token_stream.peek() else {
             return None;
         };
@@ -450,53 +475,62 @@ impl Parser {
         Some(self._try_parse_infix_value_exprs_recursive(first, 0))
     }
 
-    fn try_parse_field_or_method(&mut self, first: ValueExpr) -> Option<ValueExpr> {
+    fn try_parse_method_call(&mut self, object: ValueExprId, name: String) -> Option<ValueExprId> {
+        let type_args = self.try_parse_type_args();
+
+        if (self.token_stream.peek() != Some(Token::LeftParen)) && type_args.is_none() {
+            return None;
+        }
+
+        self.assert_next_token(Token::LeftParen);
+        let args = self.parse_comma_value_exprs(Token::RightParen);
+
+        Some(self.alloc_value_expr(ValueExpr::MethodCall {
+            object,
+            method: name,
+            type_args,
+            args,
+        }))
+    }
+
+    fn try_parse_field_or_method(&mut self, first: ValueExprId) -> Option<ValueExprId> {
         if !self.is_next_token(Token::Period) {
             return None;
         }
 
         let token = self.get_string_token();
 
-        let expr = if let Some(ValueExpr::FnCall {
-            name,
-            type_args,
-            args,
-            ..
-        }) = self.try_parse_fn_call(token.clone(), NamespaceChain::new())
-        {
-            ValueExpr::MethodCall {
-                object: Box::new(first),
-                method: name,
-                type_args,
-                args,
-            }
+        let expr = if let Some(mtd_call_id) = self.try_parse_method_call(first, token.clone()) {
+            mtd_call_id
         } else {
-            ValueExpr::ObjectField {
-                objcet: Box::new(first),
+            let tmp = ValueExpr::ObjectField {
+                objcet: first,
                 field: self.get_string_token(),
-            }
+            };
+
+            self.alloc_value_expr(tmp)
         };
 
         Some(expr)
     }
 
-    fn try_parse_indexing(&mut self, value: ValueExpr) -> Option<ValueExpr> {
+    fn try_parse_indexing(&mut self, value: ValueExprId) -> Option<ValueExprId> {
         if !self.is_next_token(Token::LeftBracket) {
             return None;
         }
 
         let result = ValueExpr::Indexing {
-            value: Box::new(value),
-            index: Box::new(self.parse_value_exprs()),
+            value,
+            index: self.parse_value_exprs(),
         };
 
         self.assert_next_token(Token::RightBracket);
 
-        Some(result)
+        Some(self.alloc_value_expr(result))
     }
 
-    fn try_parse_infix_expr(&mut self, variable: ValueExpr) -> Option<Expr> {
-        Some(match self.token_stream.peek().unwrap() {
+    fn try_parse_infix_expr(&mut self, variable: ValueExprId) -> Option<ExprId> {
+        let res = match self.token_stream.peek().unwrap() {
             Token::Equal => {
                 self.token_stream.next();
                 let value = self.parse_value_exprs();
@@ -530,26 +564,32 @@ impl Parser {
             _ => {
                 return None;
             }
-        })
+        };
+
+        Some(self.alloc_expr(res))
     }
 
-    fn try_parse_range_expr(&mut self, start: ValueExpr) -> Option<ValueExpr> {
+    fn try_parse_range_expr(&mut self, start: ValueExprId) -> Option<ValueExprId> {
         if self.is_next_token(Token::Range) {
             let end = self.parse_single_value_expr();
 
-            return Some(ValueExpr::Range {
-                start: Box::new(start),
-                end: Box::new(end),
+            let res = ValueExpr::Range {
+                start,
+                end,
                 is_inclusive: false,
-            });
+            };
+
+            return Some(self.alloc_value_expr(res));
         } else if self.is_next_token(Token::InclusiveRange) {
             let end = self.parse_single_value_expr();
 
-            return Some(ValueExpr::Range {
-                start: Box::new(start),
-                end: Box::new(end),
+            let res = ValueExpr::Range {
+                start,
+                end,
                 is_inclusive: true,
-            });
+            };
+
+            return Some(self.alloc_value_expr(res));
         }
 
         None
@@ -618,14 +658,13 @@ impl Parser {
         }
     }
 
-    fn parse_value_exprs(&mut self) -> ValueExpr {
+    fn parse_value_exprs(&mut self) -> ValueExprId {
         let single = self.parse_single_value_expr();
 
-        self.try_parse_infix_value_exprs(single.clone())
-            .unwrap_or(single)
+        self.try_parse_infix_value_exprs(single).unwrap_or(single)
     }
 
-    fn parse_single_value_expr(&mut self) -> ValueExpr {
+    fn parse_single_value_expr(&mut self) -> ValueExprId {
         let curr_token = self
             .token_stream
             .next()
@@ -639,11 +678,11 @@ impl Parser {
         let result = match curr_token {
             Token::DoubleQuote => {
                 let str = self.token_stream.string_before_char(b'"');
-                ValueExpr::StringLiteral(str)
+                self.alloc_value_expr(ValueExpr::StringLiteral(str))
             }
             Token::Quote => {
                 let str = self.token_stream.string_before_char(b'\'');
-                ValueExpr::StringLiteral(str)
+                self.alloc_value_expr(ValueExpr::StringLiteral(str))
             }
             Token::Intager(int) => {
                 if self.is_next_token(Token::Period) {
@@ -656,32 +695,31 @@ impl Parser {
                         panic!("Invalid decimal places of float literal.");
                     };
 
-                    ValueExpr::FloatLiteral(
+                    self.alloc_value_expr(ValueExpr::FloatLiteral(
                         format!("{}.{}", int, decimal_places)
                             .parse::<f64>()
                             .expect("Invalid float literal."),
-                    )
+                    ))
                 } else {
-                    ValueExpr::IntagerLiteral(int.parse::<i64>().expect("Invalid int literal."))
+                    self.alloc_value_expr(ValueExpr::IntagerLiteral(
+                        int.parse::<i64>().expect("Invalid int literal."),
+                    ))
                 }
             }
             Token::LeftParen => {
                 let items = self.parse_comma_value_exprs(Token::RightParen);
 
-                ValueExpr::Tuple(items)
+                self.alloc_value_expr(ValueExpr::Tuple(items))
             }
             Token::Asterisk => {
                 let var = self.parse_single_value_expr();
-                ValueExpr::Dereference(Box::new(var))
+                self.alloc_value_expr(ValueExpr::Dereference(var))
             }
             Token::Ampersand => {
                 let is_mut = self.is_next_token(Token::String(s!("mut")));
                 let var = self.parse_single_value_expr();
 
-                ValueExpr::Reference {
-                    value: Box::new(var),
-                    is_mut,
-                }
+                self.alloc_value_expr(ValueExpr::Reference { value: var, is_mut })
             }
             Token::String(str) => {
                 let (namespace, str) = self.try_parse_namespace(str.clone());
@@ -691,7 +729,7 @@ impl Parser {
                 } else if let Some(fn_expr) = self.try_parse_fn_call(str.clone(), namespace) {
                     fn_expr
                 } else {
-                    ValueExpr::Variable(str)
+                    self.alloc_value_expr(ValueExpr::Variable(str))
                 }
             }
             other => {
@@ -702,11 +740,11 @@ impl Parser {
         let mut prev = result;
 
         loop {
-            if let Some(chain_expr) = self.try_parse_field_or_method(prev.clone()) {
+            if let Some(chain_expr) = self.try_parse_field_or_method(prev) {
                 prev = chain_expr;
-            } else if let Some(index_expr) = self.try_parse_indexing(prev.clone()) {
+            } else if let Some(index_expr) = self.try_parse_indexing(prev) {
                 prev = index_expr;
-            } else if let Some(range_expr) = self.try_parse_range_expr(prev.clone()) {
+            } else if let Some(range_expr) = self.try_parse_range_expr(prev) {
                 prev = range_expr;
             } else {
                 return prev;
@@ -714,7 +752,7 @@ impl Parser {
         }
     }
 
-    fn parse_codeline(&mut self) -> Expr {
+    fn parse_codeline(&mut self) -> ExprId {
         let curr_token = self
             .token_stream
             .peek()
@@ -724,7 +762,6 @@ impl Parser {
         {
             eprintln!("line {}", curr_token);
         }
-
         match curr_token {
             Token::String(str) => match str.as_str() {
                 "if" => {
@@ -736,18 +773,18 @@ impl Parser {
                         .is_next_token(Token::String(s!("else")))
                         .then(|| self.parse_codeblock());
 
-                    Expr::If {
+                    self.alloc_expr(Expr::If {
                         condition,
                         if_body,
                         else_body,
-                    }
+                    })
                 }
                 "while" => {
                     self.token_stream.next();
                     let condition = self.parse_value_exprs();
                     let body = self.parse_codeblock();
 
-                    Expr::While { condition, body }
+                    self.alloc_expr(Expr::While { condition, body })
                 }
                 "for" => {
                     self.token_stream.next();
@@ -762,12 +799,12 @@ impl Parser {
                         .is_next_token(Token::String(s!("remain")))
                         .then(|| self.parse_codeblock());
 
-                    Expr::ForIn {
+                    self.alloc_expr(Expr::ForIn {
                         iter_item,
                         iter,
                         iter_body,
                         remain_body,
-                    }
+                    })
                 }
                 "let" => {
                     self.token_stream.next();
@@ -778,7 +815,7 @@ impl Parser {
                     let value = self.parse_value_exprs();
                     self.assert_next_token(Token::Semicolon);
 
-                    Expr::VariableLet { define_expr, value }
+                    self.alloc_expr(Expr::VariableLet { define_expr, value })
                 }
                 "var" => {
                     self.token_stream.next();
@@ -788,7 +825,7 @@ impl Parser {
                     let value = self.parse_value_exprs();
                     self.assert_next_token(Token::Semicolon);
 
-                    Expr::VariableVar { define_expr, value }
+                    self.alloc_expr(Expr::VariableVar { define_expr, value })
                 }
                 "fn" => {
                     self.token_stream.next();
@@ -820,13 +857,13 @@ impl Parser {
 
                     let body = self.parse_codeblock();
 
-                    Expr::FnDefine {
+                    self.alloc_expr(Expr::FnDefine {
                         name,
                         type_args,
                         return_type,
                         args,
                         body,
-                    }
+                    })
                 }
                 "return" => {
                     self.token_stream.next();
@@ -834,24 +871,25 @@ impl Parser {
 
                     self.assert_next_token(Token::Semicolon);
 
-                    Expr::Return(value)
+                    self.alloc_expr(Expr::Return(value))
                 }
                 "use" => {
                     self.token_stream.next();
 
-                    Expr::NamespaceUse(self.parse_namespace_tree())
+                    let res_tmp = Expr::NamespaceUse(self.parse_namespace_tree());
+                    self.alloc_expr(res_tmp)
                 }
                 _ => {
                     let var = self.parse_value_exprs();
 
                     let res = self
-                        .try_parse_infix_expr(var.clone())
-                        .unwrap_or(Expr::ValueExpr(var));
+                        .try_parse_infix_expr(var)
+                        .unwrap_or(self.alloc_expr(Expr::ValueExpr(var)));
 
                     if self.is_next_token(Token::Semicolon) {
                         res
                     } else {
-                        Expr::ReturnExpr(Box::new(res))
+                        self.alloc_expr(Expr::ReturnExpr(res))
                     }
                 }
             },
@@ -866,11 +904,12 @@ impl Parser {
             }
             Token::Asterisk => {
                 self.token_stream.next();
-                let var = ValueExpr::Dereference(Box::new(self.parse_single_value_expr()));
+                let var_tmp = ValueExpr::Dereference(self.parse_single_value_expr());
+                let var = self.alloc_value_expr(var_tmp);
 
                 let res = self
-                    .try_parse_infix_expr(var.clone())
-                    .unwrap_or(Expr::ValueExpr(var));
+                    .try_parse_infix_expr(var)
+                    .unwrap_or(self.alloc_expr(Expr::ValueExpr(var)));
 
                 self.assert_next_token(Token::Semicolon);
 
@@ -882,7 +921,7 @@ impl Parser {
         }
     }
 
-    fn parse_codeblock(&mut self) -> CodeBlock {
+    fn parse_codeblock(&mut self) -> CodeBlockId {
         self.assert_next_token(Token::LeftBrace);
 
         let mut lines = Vec::new();
@@ -891,6 +930,6 @@ impl Parser {
             lines.push(self.parse_codeline());
         }
 
-        CodeBlock(lines)
+        self.alloc_codeblock(CodeBlock(lines))
     }
 }

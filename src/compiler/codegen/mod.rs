@@ -56,7 +56,7 @@ impl<'a> Codegen<'a> {
         let namespace_newlang = get_static_var_hash("newlang");
         let mut result = format!("mod _newlang_base;\nuse _newlang_base as {namespace_newlang};\n");
 
-        result += self.ast.to_rust().as_str();
+        result += self.ast.to_rust(self.ast).as_str();
 
         let mut base = s!("");
 
@@ -68,42 +68,60 @@ impl<'a> Codegen<'a> {
     }
 }
 
-fn expr_vec_to_rust(vec: &Vec<impl ToRust>, sep: &str) -> String {
+fn expr_vec_to_rust(vec: &Vec<impl ToRust>, sep: &str, ctx: &SyntaxTree) -> String {
     vec.iter()
-        .map(|i| i.to_rust())
+        .map(|i| i.to_rust(ctx))
         .collect::<Vec<String>>()
         .join(sep)
 }
 
 pub trait ToRust {
-    fn to_rust(&self) -> String;
+    fn to_rust(&self, ctx: &SyntaxTree) -> String;
+}
+
+impl ToRust for ExprId {
+    fn to_rust(&self, ctx: &SyntaxTree) -> String {
+        ctx.get_expr(self.clone()).to_rust(ctx)
+    }
+}
+
+impl ToRust for ValueExprId {
+    fn to_rust(&self, ctx: &SyntaxTree) -> String {
+        ctx.get_value_expr(self.clone()).to_rust(ctx)
+    }
+}
+
+impl ToRust for CodeBlockId {
+    fn to_rust(&self, ctx: &SyntaxTree) -> String {
+        ctx.get_code_block(self.clone()).to_rust(ctx)
+    }
 }
 
 // Implement Visitor.
 impl ToRust for Expr {
-    fn to_rust(&self) -> String {
+    fn to_rust(&self, ctx: &SyntaxTree) -> String {
         match self {
-            Self::CodeBlock(expr) => expr.to_rust() + ";",
-            Self::ValueExpr(expr) => expr.to_rust() + ";",
-            Self::VariableDefineExpr(expr) => expr.to_rust() + ";",
-            Self::TypeExpr(expr) => expr.to_rust() + ";",
-            Self::NamespaceChain(expr) => expr.to_rust() + ";",
-            Self::NamespaceTree(expr) => expr.to_rust() + ";",
-            Self::NamespaceUse(expr) => format!("use {};", expr.to_rust()),
+            Self::CodeBlock(expr) => expr.to_rust(ctx) + ";",
+            Self::ValueExpr(expr) => expr.to_rust(ctx) + ";",
+            Self::VariableDefineExpr(expr) => expr.to_rust(ctx) + ";",
+            Self::TypeExpr(expr) => expr.to_rust(ctx) + ";",
+            Self::NamespaceChain(expr) => expr.to_rust(ctx) + ";",
+            Self::NamespaceTree(expr) => expr.to_rust(ctx) + ";",
+            Self::NamespaceUse(expr) => format!("use {};", expr.to_rust(ctx)),
             Self::EqualAssign { variable, value } => {
-                format!("{} = {};", variable.to_rust(), value.to_rust())
+                format!("{} = {};", variable.to_rust(ctx), value.to_rust(ctx))
             }
             Self::AddAssign { variable, value } => {
-                format!("{} += {};", variable.to_rust(), value.to_rust())
+                format!("{} += {};", variable.to_rust(ctx), value.to_rust(ctx))
             }
             Self::SubAssign { variable, value } => {
-                format!("{} -= {};", variable.to_rust(), value.to_rust())
+                format!("{} -= {};", variable.to_rust(ctx), value.to_rust(ctx))
             }
             Self::MulAssign { variable, value } => {
-                format!("{} *= {};", variable.to_rust(), value.to_rust())
+                format!("{} *= {};", variable.to_rust(ctx), value.to_rust(ctx))
             }
             Self::DivAssign { variable, value } => {
-                format!("{} /= {};", variable.to_rust(), value.to_rust())
+                format!("{} /= {};", variable.to_rust(ctx), value.to_rust(ctx))
             }
             Self::If {
                 condition,
@@ -113,34 +131,50 @@ impl ToRust for Expr {
                 if let Some(else_body) = else_body {
                     format!(
                         "if {} {} else {};",
-                        condition.to_rust(),
-                        if_body.to_rust(),
-                        else_body.to_rust()
+                        condition.to_rust(ctx),
+                        if_body.to_rust(ctx),
+                        else_body.to_rust(ctx)
                     )
                 } else {
-                    format!("if {} {};", condition.to_rust(), if_body.to_rust())
+                    format!("if {} {};", condition.to_rust(ctx), if_body.to_rust(ctx))
                 }
             }
             Self::While { condition, body } => {
-                format!("while {} {}", condition.to_rust(), body.to_rust())
+                format!("while {} {}", condition.to_rust(ctx), body.to_rust(ctx))
             }
             Self::ParalForIn {
                 iter_item,
                 iter,
                 iter_body,
                 remain_body,
-            } => paral_for_in_to_rust(iter_item, iter, iter_body, remain_body),
+            } => paral_for_in_to_rust(
+                iter_item,
+                iter.clone(),
+                iter_body.clone(),
+                remain_body.clone(),
+                ctx,
+            ),
             Self::ForIn {
                 iter_item,
                 iter,
                 iter_body,
                 remain_body,
-            } => for_in_to_rust(iter_item, iter, iter_body, remain_body),
+            } => for_in_to_rust(
+                iter_item,
+                iter.clone(),
+                iter_body.clone(),
+                remain_body.clone(),
+                ctx,
+            ),
             Self::VariableLet { define_expr, value } => {
-                format!("let {} = {};", define_expr.to_rust(), value.to_rust())
+                format!("let {} = {};", define_expr.to_rust(ctx), value.to_rust(ctx))
             }
             Self::VariableVar { define_expr, value } => {
-                format!("let mut {} = {};", define_expr.to_rust(), value.to_rust())
+                format!(
+                    "let mut {} = {};",
+                    define_expr.to_rust(ctx),
+                    value.to_rust(ctx)
+                )
             }
             Self::FnDefine {
                 name,
@@ -154,28 +188,28 @@ impl ToRust for Expr {
                         "fn {}<{}>({}) -> {} {}",
                         name,
                         type_args.join(", "),
-                        expr_vec_to_rust(args, ", "),
-                        return_type.to_rust(),
-                        body.to_rust()
+                        expr_vec_to_rust(args, ", ", ctx),
+                        return_type.to_rust(ctx),
+                        body.to_rust(ctx)
                     )
                 } else {
                     format!(
                         "fn {}({}) -> {} {}",
                         name,
-                        expr_vec_to_rust(args, ", "),
-                        return_type.to_rust(),
-                        body.to_rust()
+                        expr_vec_to_rust(args, ", ", ctx),
+                        return_type.to_rust(ctx),
+                        body.to_rust(ctx)
                     )
                 }
             }
-            Self::Return(expr) => format!("return {};", expr.to_rust()),
-            Self::ReturnExpr(expr) => format!("return {}", expr.to_rust()),
+            Self::Return(expr) => format!("return {};", expr.to_rust(ctx)),
+            Self::ReturnExpr(expr) => format!("return {}", expr.to_rust(ctx)),
         }
     }
 }
 
 impl ToRust for ValueExpr {
-    fn to_rust(&self) -> String {
+    fn to_rust(&self, ctx: &SyntaxTree) -> String {
         match self {
             Self::IntagerLiteral(int) => int.to_string(),
             Self::FloatLiteral(float) => {
@@ -188,36 +222,42 @@ impl ToRust for ValueExpr {
                 to_str
             }
             Self::StringLiteral(str) => format!("\"{}\"", str.to_owned()),
-            Self::Add(lvel, rvel) => format!("{}+{}", lvel.to_rust(), rvel.to_rust()),
-            Self::Sub(lvel, rvel) => format!("{}-{}", lvel.to_rust(), rvel.to_rust()),
-            Self::Mul(lvel, rvel) => format!("{}*{}", lvel.to_rust(), rvel.to_rust()),
-            Self::Div(lvel, rvel) => format!("{}/{}", lvel.to_rust(), rvel.to_rust()),
-            Self::Remainder(lvel, rvel) => format!("{}%{}", lvel.to_rust(), rvel.to_rust()),
-            Self::LessThan(lvel, rvel) => format!("{}<{}", lvel.to_rust(), rvel.to_rust()),
-            Self::GreaterThan(lvel, rvel) => format!("{}>{}", lvel.to_rust(), rvel.to_rust()),
-            Self::Tuple(exprs) => format!("({})", expr_vec_to_rust(exprs, ", ")),
-            Self::BoolAnd(lvel, rvel) => format!("{}&&{}", lvel.to_rust(), rvel.to_rust()),
-            Self::BoolOr(lvel, rvel) => format!("{}||{}", lvel.to_rust(), rvel.to_rust()),
-            Self::BoolEqual(lvel, rvel) => format!("{}=={}", lvel.to_rust(), rvel.to_rust()),
-            Self::BoolNotEqual(lvel, rvel) => format!("{}!={}", lvel.to_rust(), rvel.to_rust()),
+            Self::Add(lvel, rvel) => format!("{}+{}", lvel.to_rust(ctx), rvel.to_rust(ctx)),
+            Self::Sub(lvel, rvel) => format!("{}-{}", lvel.to_rust(ctx), rvel.to_rust(ctx)),
+            Self::Mul(lvel, rvel) => format!("{}*{}", lvel.to_rust(ctx), rvel.to_rust(ctx)),
+            Self::Div(lvel, rvel) => format!("{}/{}", lvel.to_rust(ctx), rvel.to_rust(ctx)),
+            Self::Remainder(lvel, rvel) => format!("{}%{}", lvel.to_rust(ctx), rvel.to_rust(ctx)),
+            Self::LessThan(lvel, rvel) => format!("{}<{}", lvel.to_rust(ctx), rvel.to_rust(ctx)),
+            Self::GreaterThan(lvel, rvel) => format!("{}>{}", lvel.to_rust(ctx), rvel.to_rust(ctx)),
+            Self::Tuple(exprs) => format!("({})", expr_vec_to_rust(exprs, ", ", ctx)),
+            Self::BoolAnd(lvel, rvel) => format!("{}&&{}", lvel.to_rust(ctx), rvel.to_rust(ctx)),
+            Self::BoolOr(lvel, rvel) => format!("{}||{}", lvel.to_rust(ctx), rvel.to_rust(ctx)),
+            Self::BoolEqual(lvel, rvel) => format!("{}=={}", lvel.to_rust(ctx), rvel.to_rust(ctx)),
+            Self::BoolNotEqual(lvel, rvel) => {
+                format!("{}!={}", lvel.to_rust(ctx), rvel.to_rust(ctx))
+            }
             Self::Variable(var) => var.to_string(),
             Self::Reference { value, is_mut } => {
                 let mut_ = if *is_mut { "mut " } else { "" };
 
-                format!("&{mut_}{}", value.to_rust())
+                format!("&{mut_}{}", value.to_rust(ctx))
             }
-            Self::Dereference(expr) => format!("*{}", expr.to_rust()),
-            Self::As { value, type_ } => format!("{} as {}", value.to_rust(), type_.to_rust()),
-            Self::Indexing { value, index } => format!("{}[{}]", value.to_rust(), index.to_rust()),
+            Self::Dereference(expr) => format!("*{}", expr.to_rust(ctx)),
+            Self::As { value, type_ } => {
+                format!("{} as {}", value.to_rust(ctx), type_.to_rust(ctx))
+            }
+            Self::Indexing { value, index } => {
+                format!("{}[{}]", value.to_rust(ctx), index.to_rust(ctx))
+            }
             Self::Range {
                 start,
                 end,
                 is_inclusive,
             } => {
                 if is_inclusive.clone() {
-                    format!("{}..={}", start.to_rust(), end.to_rust())
+                    format!("{}..={}", start.to_rust(ctx), end.to_rust(ctx))
                 } else {
-                    format!("{}..{}", start.to_rust(), end.to_rust())
+                    format!("{}..{}", start.to_rust(ctx), end.to_rust(ctx))
                 }
             }
             Self::FnCall {
@@ -226,7 +266,7 @@ impl ToRust for ValueExpr {
                 type_args,
                 args,
             } => {
-                let mut namespace_prefix = namespace.to_rust();
+                let mut namespace_prefix = namespace.to_rust(ctx);
 
                 if !namespace_prefix.is_empty() {
                     namespace_prefix += "::";
@@ -237,20 +277,20 @@ impl ToRust for ValueExpr {
                         "{}{}::<{}>({})",
                         namespace_prefix,
                         name,
-                        expr_vec_to_rust(type_args, ", "),
-                        expr_vec_to_rust(args, ", "),
+                        expr_vec_to_rust(type_args, ", ", ctx),
+                        expr_vec_to_rust(args, ", ", ctx),
                     )
                 } else {
                     format!(
                         "{}{}({})",
                         namespace_prefix,
                         name,
-                        expr_vec_to_rust(args, ", "),
+                        expr_vec_to_rust(args, ", ", ctx),
                     )
                 }
             }
             Self::ObjectField { objcet, field } => {
-                format!("{}.{}", objcet.to_rust(), field.to_owned())
+                format!("{}.{}", objcet.to_rust(ctx), field.to_owned())
             }
             Self::MethodCall {
                 object,
@@ -261,17 +301,17 @@ impl ToRust for ValueExpr {
                 if let Some(type_args) = type_args {
                     format!(
                         "{}.{}<{}>({})",
-                        object.to_rust(),
+                        object.to_rust(ctx),
                         method,
-                        expr_vec_to_rust(type_args, ", "),
-                        expr_vec_to_rust(args, ", ")
+                        expr_vec_to_rust(type_args, ", ", ctx),
+                        expr_vec_to_rust(args, ", ", ctx)
                     )
                 } else {
                     format!(
                         "{}.{}({})",
-                        object.to_rust(),
+                        object.to_rust(ctx),
                         method,
-                        expr_vec_to_rust(args, ", ")
+                        expr_vec_to_rust(args, ", ", ctx)
                     )
                 }
             }
@@ -282,9 +322,9 @@ impl ToRust for ValueExpr {
             } => {
                 format!(
                     "{}{}!({})",
-                    namespace.to_rust(),
+                    namespace.to_rust(ctx),
                     name,
-                    expr_vec_to_rust(args, ", ")
+                    expr_vec_to_rust(args, ", ", ctx)
                 )
             }
         }
@@ -292,7 +332,7 @@ impl ToRust for ValueExpr {
 }
 
 impl ToRust for VariableDefineExpr {
-    fn to_rust(&self) -> String {
+    fn to_rust(&self, ctx: &SyntaxTree) -> String {
         match self {
             Self::One {
                 is_mut,
@@ -301,20 +341,20 @@ impl ToRust for VariableDefineExpr {
             } => {
                 let mut_ = if *is_mut { "mut " } else { "" };
                 let type_ = if let Some(type_) = type_ {
-                    format!(": {}", type_.to_rust())
+                    format!(": {}", type_.to_rust(ctx))
                 } else {
                     "".to_string()
                 };
 
                 format!("{mut_}{name}{type_}")
             }
-            Self::TupleDestruct(items) => format!("({})", expr_vec_to_rust(items, ", ")),
+            Self::TupleDestruct(items) => format!("({})", expr_vec_to_rust(items, ", ", ctx)),
         }
     }
 }
 
 impl ToRust for TypeExpr {
-    fn to_rust(&self) -> String {
+    fn to_rust(&self, ctx: &SyntaxTree) -> String {
         match self {
             Self::Name(name) => name.to_owned(),
             Self::Tuple(types) => {
@@ -322,20 +362,20 @@ impl ToRust for TypeExpr {
                     "({})",
                     types
                         .iter()
-                        .map(|i| i.to_rust())
+                        .map(|i| i.to_rust(ctx))
                         .collect::<Vec<String>>()
                         .join(", ")
                 )
             }
             Self::WithArgs(name, args) => {
-                format!("{name}<{}>", expr_vec_to_rust(args, ", "))
+                format!("{name}<{}>", expr_vec_to_rust(args, ", ", ctx))
             }
         }
     }
 }
 
 impl ToRust for NamespaceChain {
-    fn to_rust(&self) -> String {
+    fn to_rust(&self, ctx: &SyntaxTree) -> String {
         self.0
             .iter()
             .map(|i| i.clone())
@@ -345,7 +385,7 @@ impl ToRust for NamespaceChain {
 }
 
 impl ToRust for NamespaceTree {
-    fn to_rust(&self) -> String {
+    fn to_rust(&self, ctx: &SyntaxTree) -> String {
         let body = self
             .0
             .iter()
@@ -356,7 +396,7 @@ impl ToRust for NamespaceTree {
         let tail = if let Some(tail) = &self.1 {
             let items = tail
                 .iter()
-                .map(|i| i.to_rust())
+                .map(|i| i.to_rust(ctx))
                 .collect::<Vec<String>>()
                 .join(", ");
 
@@ -370,11 +410,11 @@ impl ToRust for NamespaceTree {
 }
 
 impl ToRust for CodeBlock {
-    fn to_rust(&self) -> String {
+    fn to_rust(&self, ctx: &SyntaxTree) -> String {
         let mut result = s!("{\n");
 
         for line in self.0.iter() {
-            result.push_str(&line.to_rust());
+            result.push_str(&line.to_rust(ctx));
             result.push('\n');
         }
 
@@ -384,8 +424,8 @@ impl ToRust for CodeBlock {
 }
 
 impl ToRust for SyntaxTree {
-    fn to_rust(&self) -> String {
-        expr_vec_to_rust(&self.main_routine, "\n")
+    fn to_rust(&self, ctx: &SyntaxTree) -> String {
+        expr_vec_to_rust(&self.main_routine, "\n", ctx)
     }
 }
 
@@ -397,14 +437,15 @@ macro_rules! put {
 
 pub fn paral_for_in_to_rust(
     iter_item: &VariableDefineExpr,
-    iter: &ValueExpr,
-    iter_body: &CodeBlock,
-    remain_body: &Option<CodeBlock>,
+    iter: ValueExprId,
+    iter_body: CodeBlockId,
+    remain_body: Option<CodeBlockId>,
+    ctx: &SyntaxTree,
 ) -> String {
     let mut res = String::with_capacity(128);
     let namespace_newlang = get_static_var_hash("newlang");
 
-    if let ValueExpr::Tuple(items) = iter {
+    if let ValueExpr::Tuple(items) = ctx.get_value_expr(iter) {
         todo!();
     } else {
         put!(res, "unsafe {{\n");
@@ -418,7 +459,7 @@ pub fn paral_for_in_to_rust(
             let var_range_chunks = get_static_var_hash("range_chunks");
             put!(
                 res,
-                "let {var_range_chunks} = {namespace_newlang}::range_chunks(0..{}.len(), {var_thr_pool}.size(), 128);\n", iter.to_rust()
+                "let {var_range_chunks} = {namespace_newlang}::range_chunks(0..{}.len(), {var_thr_pool}.size(), 128);\n", iter.to_rust(ctx)
             );
 
             let var_s = get_static_var_hash("s");
@@ -429,7 +470,7 @@ pub fn paral_for_in_to_rust(
                 {
                     let var_slice = get_static_var_hash("slice");
                     put!(res, "let mut {var_slice} = std::mem::ManuallyDrop::new");
-                    put!(res, "(std::slice::from_raw_parts_mut({}.as_mut_ptr().add({var_range}.start), {var_range}.len()));\n", iter.to_rust());
+                    put!(res, "(std::slice::from_raw_parts_mut({}.as_mut_ptr().add({var_range}.start), {var_range}.len()));\n", iter.to_rust(ctx));
 
                     put!(res, "{var_s}.execute(move || {{\n");
                     {
@@ -438,9 +479,9 @@ pub fn paral_for_in_to_rust(
                         put!(
                             res,
                             "let {} = &mut {var_slice}[{var_i}];\n",
-                            iter_item.to_rust()
+                            iter_item.to_rust(ctx)
                         );
-                        put!(res, "{}", iter_body.to_rust());
+                        put!(res, "{}", iter_body.to_rust(ctx));
                         put!(res, "}}\n");
                     }
                     put!(res, "}});\n");
@@ -457,13 +498,14 @@ pub fn paral_for_in_to_rust(
 
 pub fn for_in_to_rust(
     iter_item: &VariableDefineExpr,
-    iter: &ValueExpr,
-    iter_body: &CodeBlock,
-    remain_body: &Option<CodeBlock>,
+    iter: ValueExprId,
+    iter_body: CodeBlockId,
+    remain_body: Option<CodeBlockId>,
+    ctx: &SyntaxTree,
 ) -> String {
     let mut res = String::with_capacity(128);
 
-    if let ValueExpr::Tuple(iters) = iter {
+    if let ValueExpr::Tuple(iters) = ctx.get_value_expr(iter) {
         let VariableDefineExpr::TupleDestruct(iter_items) = iter_item else {
             panic!("");
         };
@@ -476,7 +518,7 @@ pub fn for_in_to_rust(
                 "let mut {var_iters} = ({});\n",
                 iters
                     .iter()
-                    .map(|i| i.to_rust())
+                    .map(|i| i.to_rust(ctx))
                     .collect::<Vec<String>>()
                     .join(", ")
             );
@@ -484,7 +526,7 @@ pub fn for_in_to_rust(
             let mut while_let_item = Vec::new();
             let mut while_let_iter = Vec::new();
             for (idx, item) in iter_items.iter().enumerate() {
-                while_let_item.push(format!("Some({})", item.to_rust()));
+                while_let_item.push(format!("Some({})", item.to_rust(ctx)));
                 while_let_iter.push(format!("{var_iters}[{}].next()", idx));
             }
             let while_let_item = while_let_item.join(", ");
@@ -495,7 +537,7 @@ pub fn for_in_to_rust(
                 "while let ({}) = ({}) {}\n",
                 while_let_item,
                 while_let_iter,
-                iter_body.to_rust()
+                iter_body.to_rust(ctx)
             );
 
             if let Some(remain_body) = remain_body {
@@ -507,16 +549,16 @@ pub fn for_in_to_rust(
                         put!(
                             res,
                             "let {} = {var_iters}.{}.next();\n",
-                            item.to_rust(),
+                            item.to_rust(ctx),
                             idx
                         );
-                        end_cond.push(format!("{}.is_none()", item.to_rust()));
+                        end_cond.push(format!("{}.is_none()", item.to_rust(ctx)));
                     }
 
                     let end_cond = end_cond.join("&&");
 
                     put!(res, "if {} {{break}};\n", end_cond);
-                    put!(res, "{}\n", remain_body.to_rust());
+                    put!(res, "{}\n", remain_body.to_rust(ctx));
                 }
                 put!(res, "}}\n");
             }
@@ -526,9 +568,9 @@ pub fn for_in_to_rust(
         put!(
             res,
             "for {} in {} {}\n",
-            iter_item.to_rust(),
-            iter.to_rust(),
-            iter_body.to_rust()
+            iter_item.to_rust(ctx),
+            iter.to_rust(ctx),
+            iter_body.to_rust(ctx)
         );
     };
 
