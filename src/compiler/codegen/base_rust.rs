@@ -4,10 +4,12 @@ pub const BASE: &str = "mod {newlang_base}
 pub const THREADING_BASE: &str = "use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::sync::OnceLock;
+use std::sync::atomic::AtomicUsize;
 use std::ops::Range;
 use std::mem;
 
 static THREAD_POOL: OnceLock<ThreadPool> = OnceLock::new();
+pub static PARALLEL_DEPTH: AtomicUsize = AtomicUsize::new(0);
 
 pub fn get_thread_pool() -> &'static ThreadPool {
     THREAD_POOL.get_or_init(|| ThreadPool::new(thread::available_parallelism().unwrap().get()))

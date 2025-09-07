@@ -175,8 +175,6 @@ pub enum ValueExpr {
 
 impl ValueExpr {
     pub fn is_same_value(&self, other: ValueExpr, ctx: &SlotMap<ValueExprKey, ValueExpr>) -> bool {
-        eprintln!("{} {}", self, other);
-
         match (self, other) {
             (Self::Variable(var_me), Self::Variable(var_other)) => *var_me == var_other,
             (Self::Sub(var_me_l, var_me_r), Self::Sub(var_other_l, var_other_r)) => {
