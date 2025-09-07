@@ -12,5 +12,19 @@ New lang은 자동 멀티 스레드 컴파일링을 지원하는 프로그래밍
 - for-in 구문을 통한 자원 배분 추상화
 - 타 언어로의 컴파일링
 
+## 설치 및 사용
+Rust로 최종 컴파일 할 경우 Rust 개발 환경을 필요로 합니다.
+
+Linux:
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+다음의 명령어로 .new 파일을 컴파일 할 수 있습니다.
+
+```sh
+compiler.exe build ./foo.new
+```
+
 ## 성능 비교
 WIP
