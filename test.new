@@ -38,5 +38,7 @@ fn main() {
     mandelbrot(1024, 1024, *i % 15 + 60);
   }
 
+  mandelbrot(16384, 16384, 60);
+
   println!("{:?}", start.elapsed()); 
 }
