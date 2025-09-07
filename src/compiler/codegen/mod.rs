@@ -445,6 +445,7 @@ pub fn paral_for_in_to_rust(
 ) -> String {
     let mut res = String::with_capacity(128);
     let namespace_newlang = get_static_var_hash("newlang");
+    let iter_value_expr = ctx.value_exprs.get(iter).unwrap();
 
     if let Some(ValueExpr::Tuple(items)) = ctx.value_exprs.get(iter) {
         todo!();
@@ -458,10 +459,28 @@ pub fn paral_for_in_to_rust(
             );
 
             let var_range_chunks = get_static_var_hash("range_chunks");
-            put!(
-                res,
-                "let {var_range_chunks} = {namespace_newlang}::range_chunks(0..{}.len(), {var_thr_pool}.size(), 128);\n", iter.to_rust(ctx)
-            );
+
+            match iter_value_expr {
+                ValueExpr::Variable(..) => {
+                    put!(
+                        res,
+                        "let {var_range_chunks} = {namespace_newlang}::range_chunks(0..{}.len(), {var_thr_pool}.size(), 128);\n", iter.to_rust(ctx)
+                    );
+                }
+                ValueExpr::Range {
+                    start,
+                    end,
+                    is_inclusive,
+                } => {
+                    let inclusive_eq_str = if *is_inclusive { "=" } else { "" };
+
+                    put!(
+                        res,
+                        "let {var_range_chunks} = {namespace_newlang}::range_chunks({}..{}{}, {var_thr_pool}.size(), 128);\n", start.to_rust(ctx), inclusive_eq_str, end.to_rust(ctx)
+                    );
+                }
+                _ => {}
+            };
 
             let var_s = get_static_var_hash("s");
             put!(res, "{var_thr_pool}.scope(|{var_s}| {{\n");
@@ -469,23 +488,50 @@ pub fn paral_for_in_to_rust(
                 let var_range = get_static_var_hash("range");
                 put!(res, "for {var_range} in {var_range_chunks} {{\n");
                 {
-                    let var_slice = get_static_var_hash("slice");
-                    put!(res, "let mut {var_slice} = std::mem::ManuallyDrop::new");
-                    put!(res, "(std::slice::from_raw_parts_mut({}.as_mut_ptr().add({var_range}.start), {var_range}.len()));\n", iter.to_rust(ctx));
+                    match iter_value_expr {
+                        ValueExpr::Variable(..) => {
+                            let var_slice = get_static_var_hash("slice");
+                            put!(res, "let mut {var_slice} = std::mem::ManuallyDrop::new");
+                            put!(res, "(std::slice::from_raw_parts_mut({}.as_mut_ptr().add({var_range}.start), {var_range}.len()));\n", iter.to_rust(ctx));
 
-                    put!(res, "{var_s}.execute(move || {{\n");
-                    {
-                        let var_i = get_static_var_hash("i");
-                        put!(res, "for {var_i} in 0..{var_slice}.len() {{\n");
-                        put!(
-                            res,
-                            "let {} = &mut {var_slice}[{var_i}];\n",
-                            iter_item.to_rust(ctx)
-                        );
-                        put!(res, "{}", iter_body.to_rust(ctx));
-                        put!(res, "}}\n");
+                            put!(res, "{var_s}.execute(move || {{\n");
+                            {
+                                let var_i = get_static_var_hash("i");
+                                put!(res, "for {var_i} in 0..{var_slice}.len() {{\n");
+                                put!(
+                                    res,
+                                    "let {} = &mut {var_slice}[{var_i}];\n",
+                                    iter_item.to_rust(ctx)
+                                );
+                                put!(res, "{}", iter_body.to_rust(ctx));
+                                put!(res, "}}\n");
+                            }
+                            put!(res, "}});\n");
+                        }
+                        ValueExpr::Range {
+                            start,
+                            end,
+                            is_inclusive,
+                        } => {
+                            put!(res, "{var_s}.execute(move || {{\n");
+                            {
+                                let inclusive_eq = if *is_inclusive { "=" } else { "" };
+
+                                put!(
+                                    res,
+                                    "for {} in {}..{}{} {{\n",
+                                    iter_item.to_rust(ctx),
+                                    start.to_rust(ctx),
+                                    inclusive_eq,
+                                    end.to_rust(ctx)
+                                );
+                                put!(res, "{}", iter_body.to_rust(ctx));
+                                put!(res, "}}\n");
+                            }
+                            put!(res, "}});\n");
+                        }
+                        _ => {}
                     }
-                    put!(res, "}});\n");
                 }
                 put!(res, "}};\n");
             }
