@@ -7,11 +7,42 @@
 //     fn visit_namespace_tree(&mut self, expr: &NamespaceTree);
 // }
 
-use slotmap::new_key_type;
+use std::default;
+
+use slotmap::{new_key_type, SlotMap};
+use strum_macros::{Display, EnumString};
 
 new_key_type! { pub struct ExprKey; }
+
+impl ExprKey {
+    pub fn get(&self, slotmap: &SlotMap<ExprKey, Expr>) -> Expr {
+        slotmap.get(*self).unwrap().clone()
+    }
+}
+
 new_key_type! { pub struct ValueExprKey; }
+
+impl ValueExprKey {
+    pub fn get(&self, ctx: &SlotMap<ValueExprKey, ValueExpr>) -> ValueExpr {
+        ctx.get(*self).unwrap().clone()
+    }
+
+    pub fn is_same_value(
+        &self,
+        other: ValueExprKey,
+        ctx: &SlotMap<ValueExprKey, ValueExpr>,
+    ) -> bool {
+        self.get(ctx).is_same_value(other.get(ctx), ctx)
+    }
+}
+
 new_key_type! { pub struct CodeBlockKey; }
+
+impl CodeBlockKey {
+    pub fn get(&self, slotmap: &SlotMap<CodeBlockKey, CodeBlock>) -> CodeBlock {
+        slotmap.get(*self).unwrap().clone()
+    }
+}
 
 #[derive(Clone)]
 pub enum Expr {
@@ -82,7 +113,7 @@ pub enum Expr {
     NamespaceUse(NamespaceTree),
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Display)]
 pub enum ValueExpr {
     IntagerLiteral(i64),
     FloatLiteral(f64),
@@ -142,6 +173,21 @@ pub enum ValueExpr {
     },
 }
 
+impl ValueExpr {
+    pub fn is_same_value(&self, other: ValueExpr, ctx: &SlotMap<ValueExprKey, ValueExpr>) -> bool {
+        eprintln!("{} {}", self, other);
+
+        match (self, other) {
+            (Self::Variable(var_me), Self::Variable(var_other)) => *var_me == var_other,
+            (Self::Sub(var_me_l, var_me_r), Self::Sub(var_other_l, var_other_r)) => {
+                var_me_l.is_same_value(var_other_l, ctx) && var_me_r.is_same_value(var_other_r, ctx)
+            }
+            (Self::IntagerLiteral(int_l), Self::IntagerLiteral(int_r)) => *int_l == int_r,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum VariableDefineExpr {
     One {
@@ -159,6 +205,12 @@ pub enum TypeExpr {
     WithArgs(String, Vec<TypeExpr>),
 }
 
+impl Default for TypeExpr {
+    fn default() -> Self {
+        Self::Name("".into())
+    }
+}
+
 #[derive(Clone)]
 pub struct NamespaceTree(pub Vec<String>, pub Option<Vec<NamespaceTree>>);
 
@@ -167,6 +219,12 @@ pub struct NamespaceChain(pub Vec<String>);
 
 impl NamespaceChain {
     pub fn new() -> Self {
+        Self(Vec::new())
+    }
+}
+
+impl Default for NamespaceChain {
+    fn default() -> Self {
         Self(Vec::new())
     }
 }
