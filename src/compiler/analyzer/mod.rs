@@ -36,7 +36,7 @@ struct RangeItemInfo {
     delta: ValueExprKey,
     min: ValueExprKey,
     max: ValueExprKey,
-    scope_floor: usize,
+    scope_depth: usize,
 }
 
 struct ScopeInfo {
@@ -114,7 +114,7 @@ impl Analyzer {
         return None;
     }
 
-    fn find_value_scope_floor(&self, name: &String) -> Option<usize> {
+    fn find_value_scope_depth(&self, name: &String) -> Option<usize> {
         for (i, scope) in self.scope_stack.iter().enumerate().rev() {
             if matches!(scope.vars.get(name), Some(..)) {
                 return Some(i);
@@ -252,7 +252,7 @@ impl Analyzer {
                         delta,
                         min,
                         max,
-                        scope_floor: self.scope_stack.len(),
+                        scope_depth: self.scope_stack.len(),
                     },
                 );
             }
@@ -331,7 +331,7 @@ impl Analyzer {
                 };
             }
             ValueExpr::Variable(var) => {
-                let scope_floor = none_to_err!(self.find_value_scope_floor(&var), ExprErr);
+                let scope_floor = none_to_err!(self.find_value_scope_depth(&var), ExprErr);
                 let var_type = none_to_err!(self.find_value_from_scopes(&var), ExprErr);
 
                 if scope_floor < self.scope_stack.len() - 1 {
@@ -666,7 +666,7 @@ impl Analyzer {
         range0: RangeItemInfo,
         range1: RangeItemInfo,
     ) -> Option<RangeItemInfo> {
-        let (range_parent, range_child) = if range0.scope_floor > range1.scope_floor {
+        let (range_parent, range_child) = if range0.scope_depth > range1.scope_depth {
             (range1, range0)
         } else {
             (range0, range1)
@@ -696,7 +696,7 @@ impl Analyzer {
             delta,
             min,
             max,
-            scope_floor: 0,
+            scope_depth: 0,
         });
     }
 
