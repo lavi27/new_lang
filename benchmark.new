@@ -1,8 +1,8 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 fn mandelbrot(width: usize, height: usize, iterations: usize): Vec<u32> {
     var pixels: Vec<u32> = Vec::with_capacity(width * height);
-    for i in 0..(width*height) {
+    for _ in 0..(width*height) {
       pixels.push(0);
     } 
     
@@ -13,12 +13,14 @@ fn mandelbrot(width: usize, height: usize, iterations: usize): Vec<u32> {
             let cx: f64 = (x as f64 / width as f64) * 3.5 - 2.5;
             let cy: f64 = (y as f64 / height as f64) * 2.0 - 1.0;
             var iter: usize = 0;
+
             while zx * zx + zy * zy < 2.5 && iter < iterations {
                 let tmp: f64 = zx * zx - zy * zy + cx;
                 zy = 2.0 * zx * zy + cy;
                 zx = tmp;
                 iter += 1;
             }
+
             pixels[y * width + x] = iter as u32;
         }
     }
@@ -27,18 +29,13 @@ fn mandelbrot(width: usize, height: usize, iterations: usize): Vec<u32> {
 }
 
 fn main() {
-  var vec: Vec<usize> = Vec::with_capacity(1000);
-  for i in 0..vec.capacity() {
-    vec.push(i); 
-  }
+    let iter: usize = 1000; 
+    let size: usize = 1024;
+    let start = Instant::now();
 
-  let start = Instant::now();
+    for _ in 0..iter {
+        mandelbrot(size, size, 60);
+    }
 
-  for i in &vec {
-    mandelbrot(1024, 1024, *i % 15 + 60);
-  }
-
-  mandelbrot(16384, 16384, 60);
-
-  println!("{:?}", start.elapsed()); 
+    println!("{:?}", start.elapsed() / iter.try_into().unwrap()); 
 }
