@@ -27,4 +27,14 @@ compiler.exe build ./foo.new
 ```
 
 ## 성능 비교
+new 언어 실행
+```sh
+compiler.exe run ./benchmark.new --release
+```
+
+rust 언어 실행
+```sh
+cargo run --bin benchmark --release
+```
+
 WIP
