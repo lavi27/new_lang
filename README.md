@@ -37,4 +37,7 @@ rust 언어 실행
 cargo run --bin benchmark --release
 ```
 
-WIP
+|| || size:512 iter:200 || size:1024 iter:50 || size:16384 iter:10 || size:65536 iter:5 ||
+|| || || || || ||
+|| new || || || 580.723ms || ||
+|| rust || || || || ||
