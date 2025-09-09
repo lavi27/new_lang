@@ -445,22 +445,44 @@ pub fn paral_for_in_to_rust(
 ) -> String {
     let mut res = String::with_capacity(128);
     let namespace_newlang = get_static_var_hash("newlang");
-    let iter_value_expr = ctx.value_exprs.get(iter).unwrap();
+    let iter_value_expr = iter.get(&ctx.value_exprs);
 
-    if let Some(ValueExpr::Tuple(items)) = ctx.value_exprs.get(iter) {
+    if let ValueExpr::Tuple(items) = iter.get(&ctx.value_exprs) {
         todo!();
     } else {
-        put!(res, "if {namespace_newlang}::PARALLEL_DEPTH.load(std::sync::atomic::Ordering::Relaxed) < 1 {{\n");
+        put!(res, "unsafe {{\n");
         {
-            put!(res, "{namespace_newlang}::PARALLEL_DEPTH.fetch_add(1, std::sync::atomic::Ordering::Relaxed);\n");
-            put!(res, "unsafe {{\n");
-            {
-                let var_thr_pool = get_static_var_hash("thr_pool");
-                put!(
-                    res,
-                    "let {var_thr_pool} = {namespace_newlang}::get_thread_pool();\n"
-                );
+            let var_thr_pool = get_static_var_hash("thr_pool");
+            put!(
+                res,
+                "let {var_thr_pool} = {namespace_newlang}::get_thread_pool();\n"
+            );
 
+            put!(res, "if {namespace_newlang}::PARALLEL_DEPTH.load(std::sync::atomic::Ordering::Relaxed) < 1 &&");
+            match iter_value_expr {
+                ValueExpr::Variable(..) | ValueExpr::Reference { .. } => {
+                    put!(res, "{}.len()", iter_value_expr.to_rust(ctx));
+                }
+                ValueExpr::Range {
+                    start,
+                    end,
+                    is_inclusive,
+                } => {
+                    let inclusive = if is_inclusive { "+1" } else { "" };
+
+                    put!(
+                        res,
+                        "{}-{}{}",
+                        end.to_rust(ctx),
+                        start.to_rust(ctx),
+                        inclusive
+                    );
+                }
+                _ => {}
+            };
+            put!(res, ">= {var_thr_pool}.size() + 3 {{\n");
+            {
+                put!(res, "{namespace_newlang}::PARALLEL_DEPTH.fetch_add(1, std::sync::atomic::Ordering::Relaxed);\n");
                 let var_range_chunks = get_static_var_hash("range_chunks");
 
                 match iter_value_expr {
@@ -475,7 +497,7 @@ pub fn paral_for_in_to_rust(
                         end,
                         is_inclusive,
                     } => {
-                        let inclusive_eq_str = if *is_inclusive { "=" } else { "" };
+                        let inclusive_eq_str = if is_inclusive { "=" } else { "" };
 
                         put!(
                         res,
@@ -531,18 +553,18 @@ pub fn paral_for_in_to_rust(
                     put!(res, "}};\n");
                 }
                 put!(res, "}});\n");
+                put!(res, "{namespace_newlang}::PARALLEL_DEPTH.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);\n");
             }
+            put!(res, "}} else {{\n");
+            put!(
+                res,
+                "{}",
+                for_in_to_rust(iter_item, iter, iter_body, remain_body, ctx)
+            );
             put!(res, "}}\n");
-            put!(res, "{namespace_newlang}::PARALLEL_DEPTH.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);\n");
-        }
-        put!(res, "}} else {{\n");
-        put!(
-            res,
-            "{}",
-            for_in_to_rust(iter_item, iter, iter_body, remain_body, ctx)
-        );
+        };
         put!(res, "}}\n");
-    };
+    }
 
     res
 }

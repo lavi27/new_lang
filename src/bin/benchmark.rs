@@ -29,8 +29,8 @@ fn mandelbrot(width: usize, height: usize, iterations: usize) -> Vec<u32> {
 }
 
 fn main() {
-    // let iter: usize = 200;
-    // let size: usize = 512;
+    let iter: usize = 200;
+    let size: usize = 512;
     let start = Instant::now();
 
     for _ in 0..iter {

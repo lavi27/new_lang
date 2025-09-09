@@ -39,5 +39,5 @@ cargo run --bin benchmark --release
 
 ||size:512 iter:200|size:1024 iter:50|size:16384 iter:10|size:32768 iter:5|
 |---:|---|---|---|---|
-|new->rust|542.145µs|2.010ms|520.372ms|2.088s|
+|new->rust|542.145µs|2.010ms|421.530ms|1.731s|
 |rust|13.920ms|54.875ms|13.722s|54.819s|
