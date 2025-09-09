@@ -511,22 +511,14 @@ pub fn paral_for_in_to_rust(
                                 }
                                 put!(res, "}});\n");
                             }
-                            ValueExpr::Range {
-                                start,
-                                end,
-                                is_inclusive,
-                            } => {
+                            ValueExpr::Range { .. } => {
                                 put!(res, "{var_s}.execute(|| {{\n");
                                 {
-                                    let inclusive_eq = if *is_inclusive { "=" } else { "" };
-
                                     put!(
                                         res,
-                                        "for {} in {}..{}{} {{\n",
+                                        "for {} in {} {{\n",
                                         iter_item.to_rust(ctx),
-                                        start.to_rust(ctx),
-                                        inclusive_eq,
-                                        end.to_rust(ctx)
+                                        var_range
                                     );
                                     put!(res, "{}", iter_body.to_rust(ctx));
                                     put!(res, "}}\n");
